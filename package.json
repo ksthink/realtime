@@ -1,0 +1,32 @@
+{
+  "name": "doltap",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "NODE_OPTIONS=--experimental-websocket node --test --test-force-exit tests/rules.test.mjs",
+    "gen:spawn": "tsx scripts/gen-spawn-points.ts"
+  },
+  "dependencies": {
+    "@react-three/fiber": "^9.8.2",
+    "@supabase/supabase-js": "^2.109.0",
+    "next": "^16.4.5",
+    "react": "19.2",
+    "react-dom": "19.2",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.187.0",
+    "playwright": "^1.64.1",
+    "supabase": "^3.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
