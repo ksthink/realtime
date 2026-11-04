@@ -21,7 +21,7 @@ await a.getByPlaceholder("예: 감자").fill("감자");
 await a.mouse.move(500, 281); await a.mouse.down(); await a.mouse.move(640, 230, { steps: 8 }); await a.mouse.up();
 await a.waitForTimeout(600);
 await a.screenshot({ path: `${out}/1-sculpt.png` });
-await a.getByRole("button", { name: "마을로 들어가기" }).click();
+await a.getByRole("button", { name: "입장" }).click();
 await a.waitForFunction(() => window.__doltap?.debugState().stones.length > 100, null, { timeout: 180000 });
 const state = () => a.evaluate(() => window.__doltap.debugState());
 const until = (fn, arg) => a.waitForFunction(fn, arg, { timeout: 60000, polling: 300 });

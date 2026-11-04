@@ -223,16 +223,18 @@ export function Sculptor({ busy, error, onDone, onCancel }: { busy: boolean; err
         </div>
         <form className="sculpt-foot" onSubmit={(e) => { e.preventDefault(); finish(); }}>
           {error && <p className="error" role="alert">{error}</p>}
-          <label className="name-field">
-            <span>마을에서 쓸 이름</span>
-            <input value={name} maxLength={12} onChange={(e) => setName(e.target.value)} placeholder="예: 감자" autoComplete="off" />
-          </label>
+          <div className="tools">
+            <label className="name-field">
+              <span>이름</span>
+              <input value={name} maxLength={12} onChange={(e) => setName(e.target.value)} placeholder="예: 감자" autoComplete="off" />
+            </label>
+            <button type="submit" className="go" disabled={busy || !trimmed}>{busy ? "들어가는 중…" : "입장"}</button>
+            {onCancel && <button type="button" onClick={onCancel}>취소</button>}
+          </div>
           <div className="tools">
             <button type="button" onClick={() => api.current?.smooth()}>매끈하게</button>
             <button type="button" onClick={() => api.current?.recolor()}>다른 색</button>
-            <button type="button" onClick={() => api.current?.shape(shape)}>처음부터</button>
-            {onCancel && <button type="button" onClick={onCancel}>취소</button>}
-            <button type="submit" className="go" disabled={busy || !trimmed}>{busy ? "들어가는 중…" : "마을로 들어가기"}</button>
+            <button type="button" onClick={() => api.current?.shape(shape)}>초기화</button>
           </div>
         </form>
       </div>

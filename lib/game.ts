@@ -28,7 +28,7 @@ type Floater = { sprite: THREE.Sprite; t: number };
 const CAMS = ["따라가기", "하늘에서"];
 const SUN_OFF = new THREE.Vector3(8, 14, 6);
 const UP = new THREE.Vector3(0, 1, 0);
-const LABEL_RANGE = 45;
+const LABEL_RANGE = 10; // 남의 탑 푯말은 이 거리 안에서만 보인다. 내 탑은 항상 보인다
 
 // 다시 빚기를 취소하고 돌아올 자리
 export type PlayerSpot = { x: number; z: number; yaw: number };
