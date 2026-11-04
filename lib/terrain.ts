@@ -48,3 +48,15 @@ export function terrainY(x: number, z: number) {
   return h;
 }
 export const isWater = (x: number, z: number) => terrainY(x, z) < WATER_Y + 0.12;
+
+// 가장 가까운 물까지의 대략적인 거리(미터). 주변을 고리 모양으로 살핀다. 범위 안에 없으면 Infinity
+export function waterDistance(x: number, z: number, range = 24) {
+  if (isWater(x, z)) return 0;
+  for (let r = 2; r <= range; r += 2) {
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      if (isWater(x + Math.cos(a) * r, z + Math.sin(a) * r)) return r;
+    }
+  }
+  return Infinity;
+}

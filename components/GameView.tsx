@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { Game, type HudState } from "@/lib/game";
 import { type CharacterRow, Net } from "@/lib/net";
 import { WISH_AT, WISH_MAX } from "@/lib/rules";
+import { soundDebug, startSound } from "@/lib/sound";
 import { CameraIcon, ClockIcon, CloseIcon, DiscardIcon, DragIcon, FirstStoneIcon, PersonIcon, PickIcon, PrayIcon, SculptIcon, StackIcon, TowerIcon, WishIcon } from "./Icons";
 
 const TOAST_MS = 5000;
@@ -37,7 +38,8 @@ function Scene({ onGame, db, me, font }: { onGame(g: Game | null): void; db: Sup
     game.current = g;
     onGame(g);
     g.net.start();
-    if (new URLSearchParams(location.search).has("debug")) (window as unknown as { __doltap: Game }).__doltap = g;
+    startSound();
+    if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { __doltap: g, __soundDebug: soundDebug });
 
     // 빈 곳 드래그로 카메라 회전, 휠로 거리
     const el = gl.domElement;

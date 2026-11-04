@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import * as THREE from "three";
 import { MAX_PEOPLE } from "@/lib/rules";
+import { unlockSound } from "@/lib/sound";
 import { buildWorld } from "@/lib/three/world";
 import "./intro.css";
 
@@ -94,7 +95,7 @@ export function Intro({ db, onEnter }: { db: SupabaseClient; onEnter(): void }) 
       <main className="intro-front">
         <h1>돌탑 마을</h1>
         <p role="img" aria-label={people === null ? `정원 ${MAX_PEOPLE}명` : `현재 접속 ${people}명, 정원 ${MAX_PEOPLE}명`}>{people ?? "–"} / {MAX_PEOPLE}</p>
-        <button type="button" disabled={full} onClick={() => void enter()}>{full ? "정원이 찼어요" : "입장"}</button>
+        <button type="button" disabled={full} onClick={() => { unlockSound(); void enter(); }}>{full ? "정원이 찼어요" : "입장"}</button>
       </main>
     </div>
   );

@@ -2,7 +2,8 @@ import * as THREE from "three";
 import type { CharacterRow, DropResult, NetEvents, Pose, StoneRow, TowerRow } from "./net";
 import { Net } from "./net";
 import { formatLife, MAX_STONES, PICK_RANGE, PRAY_COOLDOWN_MS, PRAY_RANGE, STACK_RADIUS, TOWER_GAP, WISH_AT } from "./rules";
-import { WORLD, clamp, isWater, lerp, terrainY } from "./terrain";
+import { playDrop, playPick, playStep, setWaterDistance, stopSound, stopStep } from "./sound";
+import { WORLD, clamp, isWater, lerp, terrainY, waterDistance } from "./terrain";
 import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
 import { makeStoneMesh } from "./three/stone";
@@ -18,7 +19,7 @@ export type HudState = {
 type StoneView = {
   row: StoneRow; mesh: THREE.Mesh;
   from: THREE.Vector3 | null; to: THREE.Vector3; t: number; dur: number; arc: number;
-  grow: number; dying: boolean;
+  grow: number; dying: boolean; landSound?: boolean;
 };
 type TowerView = { row: TowerRow; label: TowerLabel; top: number };
 type Remote = { blob: Blob; target: THREE.Vector3; targetYaw: number; moving: boolean; seen: boolean; prayUntil: number };
@@ -60,6 +61,8 @@ export class Game {
   private ring: THREE.Mesh | null = null;
   private ringFor: string | null = null;
   inputLocked = false;
+  private waterT = 0;
+  private lastContact = 0;
 
   constructor(
     private scene: THREE.Scene,
@@ -133,6 +136,8 @@ export class Game {
     const prev = v.row;
     v.row = row;
     v.dying = false;
+    // 내가 내려놓은 돌은 땅이나 탑에 닿는 순간 소리를 낸다
+    if (prev.state === "held" && prev.holder_id === this.net.uid && row.state !== "held") v.landSound = true;
     if (prev.tower_id && prev.tower_id !== row.tower_id) this.restack(prev.tower_id);
     if (row.state === "stacked" && row.tower_id) this.restack(row.tower_id);
     else if (row.state === "ground") {
@@ -140,6 +145,7 @@ export class Game {
       // 탑에서 흩어질 때는 높이 튀어 오른다
       this.moveStone(v, to, isNew ? 0 : prev.state === "stacked" ? 0.8 : 0.35, prev.state === "stacked" ? 1.4 : 0.3);
     }
+    if (v.landSound && !v.from) { v.landSound = false; playDrop(); }
   }
 
   private moveStone(v: StoneView, to: THREE.Vector3, dur: number, arc: number) {
@@ -340,6 +346,7 @@ export class Game {
     this.me.yaw = Math.atan2(s.row.x - p.x, s.row.z - p.z);
     this.me.state = "pickup"; this.me.stateT = 0;
     if (await this.net.pickStone(s.row.id)) {
+      playPick();
       this.applyStone({ ...s.row, state: "held", holder_id: this.net.uid, expires_at: null });
     } else {
       this.toast("다른 사람이 먼저 집었어요");
@@ -440,7 +447,17 @@ export class Game {
     }
     me.baseY = terrainY(me.g.position.x, me.g.position.z);
     animateBlob(me, dt, moving);
+    // 발이 땅에 닿는 순간(걷기 위상이 π의 배수를 지날 때) 발소리를 낸다
+    const contact = Math.floor(me.walk / Math.PI);
+    if (moving && contact !== this.lastContact) playStep();
+    if (!moving && this.movingNow) stopStep();
+    this.lastContact = contact;
     this.movingNow = moving;
+    this.waterT -= dt;
+    if (this.waterT <= 0) {
+      this.waterT = 0.25;
+      setWaterDistance(waterDistance(me.g.position.x, me.g.position.z));
+    }
   }
   private movingNow = false;
 
@@ -493,7 +510,10 @@ export class Game {
         const e = v.t * (2 - v.t);
         m.position.lerpVectors(v.from, v.to, e);
         m.position.y += Math.sin(v.t * Math.PI) * v.arc;
-        if (v.t >= 1) v.from = null;
+        if (v.t >= 1) {
+          v.from = null;
+          if (v.landSound) { v.landSound = false; playDrop(); }
+        }
       } else if (m.position.distanceToSquared(v.to) > 1e-6) {
         m.position.copy(v.to);
       }
@@ -659,6 +679,7 @@ export class Game {
   }
 
   dispose() {
+    stopSound();
     this.net.stop();
     this.scene.remove(this.root);
   }
