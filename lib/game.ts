@@ -11,7 +11,7 @@ import { buildWorld } from "./three/world";
 export type HudState = {
   online: boolean; people: number; towers: number;
   myStones: number; myMinutes: number | null; myWish: string | null;
-  carrying: boolean; prompt: string; dropKind: "first" | "stack" | "discard" | "blocked" | null;
+  carrying: boolean; prompt: string; action: "first" | "stack" | "discard" | "blocked" | "pick" | "pray" | null; dropKind: "first" | "stack" | "discard" | "blocked" | null;
   canPray: boolean; prayWait: number; canWish: boolean; cam: string; toastId: number; toast: string;
 };
 
@@ -608,13 +608,14 @@ export class Game {
       : kind === "blocked" ? "다른 탑과 너무 가까워요 (E)"
       : stone ? "돌 줍기 (E)"
       : near ? `${near.row.owner_id === this.net.uid ? "내 탑" : near.row.owner_name + "의 탑"}에 합장하기 (Q)`
-      : "돌을 찾아보세요";
+      : "";
+    const action = kind ?? (stone ? "pick" : near ? "pray" : null);
     return {
       online: this.online, people: this.people, towers: this.towers.size,
       myStones: mine ? this.towerStoneCount(mine.row.id) : 0,
       myMinutes: mine ? Math.ceil((Date.parse(mine.row.expires_at) - Date.now()) / 60000) : null,
       myWish: mine?.row.wish ?? null,
-      carrying: !!this.myHeld, prompt, dropKind: kind,
+      carrying: !!this.myHeld, prompt, action, dropKind: kind,
       canPray: !!near, prayWait: near ? Math.ceil(this.prayWait(near.row.id) / 60000) : 0,
       canWish: this.canWishHere, cam: CAMS[this.camMode],
       toastId: this.toastId, toast: this.toastMsg,

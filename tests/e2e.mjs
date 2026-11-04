@@ -206,6 +206,15 @@ await a.screenshot({ path: `${out}/10-collapsed.png` });
 assert.equal((await state()).hud.myStones, 0);
 console.log("ok 붕괴로 탑과 소원 삭제");
 
+// 메시지는 5초 뒤 사라진다
+await a.evaluate(() => window.__doltap.toast("사라짐 확인"));
+await a.waitForSelector(".toast.on");
+await a.waitForTimeout(3500);
+assert.equal(await a.locator(".toast.on").count(), 1, "5초 전에 사라짐");
+await a.waitForTimeout(3500);
+assert.equal(await a.locator(".toast.on").count(), 0, "5초 뒤에도 남아 있음");
+console.log("ok 메시지 5초 뒤 사라짐");
+
 // 새로고침해도 들고 있던 돌과 탑이 이어진다
 await pickNearest(0, 0.33);
 await a.reload({ waitUntil: "domcontentloaded" });

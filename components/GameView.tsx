@@ -7,6 +7,18 @@ import * as THREE from "three";
 import { Game, type HudState } from "@/lib/game";
 import { type CharacterRow, Net } from "@/lib/net";
 import { WISH_AT, WISH_MAX } from "@/lib/rules";
+import { ClockIcon, DiscardIcon, FirstStoneIcon, PersonIcon, PickIcon, PrayIcon, StackIcon, TowerIcon } from "./Icons";
+
+const TOAST_MS = 5000;
+
+const ACTIONS = {
+  pick: { icon: PickIcon, key: "E" },
+  first: { icon: FirstStoneIcon, key: "E" },
+  stack: { icon: StackIcon, key: "E" },
+  discard: { icon: DiscardIcon, key: "E" },
+  blocked: { icon: DiscardIcon, key: "E" },
+  pray: { icon: PrayIcon, key: "Q" },
+};
 
 function Scene({ onGame, db, me, font }: { onGame(g: Game | null): void; db: SupabaseClient; me: CharacterRow; font: string }) {
   const { scene, camera, gl } = useThree();
@@ -54,19 +66,18 @@ function Scene({ onGame, db, me, font }: { onGame(g: Game | null): void; db: Sup
 
 const EMPTY: HudState = {
   online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myWish: null, carrying: false,
-  prompt: "마을에 들어가는 중…", dropKind: null, canPray: false, prayWait: 0, canWish: false, cam: "따라가기", toastId: 0, toast: "",
+  prompt: "", action: null, dropKind: null, canPray: false, prayWait: 0, canWish: false, cam: "따라가기", toastId: 0, toast: "",
 };
 
 export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me: CharacterRow; font: string; onResculpt(): void }) {
   const [game, setGame] = useState<Game | null>(null);
   const [hud, setHud] = useState(EMPTY);
-  const [toast, setToast] = useState("");
+  const [toastOn, setToastOn] = useState(false);
   const [wishOpen, setWishOpen] = useState(false);
   const [wish, setWish] = useState("");
   const markerRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
-  const [lastToast, setLastToast] = useState(0);
 
   // HUD 폴링: 프레임마다 React를 돌리지 않는다
   useEffect(() => {
@@ -81,13 +92,13 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
     return () => { clearInterval(id); cancelAnimationFrame(raf); };
   }, [game]);
 
+  // 메시지마다 5초 동안 보여 주고 서서히 사라진다. 글자는 남겨 둬야 사라지는 동안에도 보인다
   useEffect(() => {
-    if (hud.toastId === lastToast) return;
-    setLastToast(hud.toastId);
-    setToast(hud.toast);
-    const t = setTimeout(() => setToast(""), 2200);
+    if (!hud.toastId) return;
+    setToastOn(true);
+    const t = setTimeout(() => setToastOn(false), TOAST_MS);
     return () => clearTimeout(t);
-  }, [hud.toastId, hud.toast, lastToast]);
+  }, [hud.toastId]);
 
   const openWish = () => {
     if (!game) return;
@@ -141,6 +152,8 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
     if (knobRef.current) knobRef.current.style.transform = "";
   };
 
+  const ActionIcon = hud.action ? ACTIONS[hud.action].icon : null;
+
   return (
     <div className="stage">
       <Canvas shadows="percentage" camera={{ fov: 42, near: 0.1, far: 260, position: [0, 5, 9] }} dpr={[1, 2]}>
@@ -148,11 +161,20 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
       </Canvas>
 
       <div className="hud tl">
-        <div className={`chip prompt ${hud.dropKind ?? ""}`}>{hud.prompt}</div>
-        <div className="chip">
-          {hud.myMinutes !== null ? <>내 탑 <b>{hud.myStones}</b>단 · <b>{Math.max(0, hud.myMinutes)}</b>분 남음</> : "아직 내 탑이 없어요"}
+        <div className="stat-row">
+          <div className="chip stat" role="img" aria-label={`마을 탑 ${hud.towers}개`}><TowerIcon /><b>{hud.towers}</b></div>
+          <div className={`chip stat ${hud.online ? "" : "offline"}`} role="img" aria-label={`접속 ${hud.people}명${hud.online ? "" : ", 연결 중"}`}><PersonIcon /><b>{hud.people}</b></div>
         </div>
-        <div className="chip">마을 탑 <b>{hud.towers}</b>개 · 접속 <b>{hud.people}</b>명{!hud.online && " · 연결 중…"}</div>
+        {hud.myMinutes !== null && (
+          <div className="chip stat mine" role="img" aria-label={`내 탑 ${hud.myStones}단, ${Math.max(0, hud.myMinutes)}분 남음`}>
+            <TowerIcon /><b>{hud.myStones}</b><ClockIcon /><b>{Math.max(0, hud.myMinutes)}</b>
+          </div>
+        )}
+        {ActionIcon && (
+          <div className={`chip stat action ${hud.action}`} role="img" aria-label={hud.prompt}>
+            <ActionIcon size={22} /><kbd>{ACTIONS[hud.action!].key}</kbd>
+          </div>
+        )}
       </div>
       <div className="hud tr keys">
         <div className="chip key"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · 드래그 회전</div>
@@ -168,7 +190,7 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
         <span />
       </div>
 
-      <div className={`toast ${toast ? "on" : ""}`} role="status">{toast}</div>
+      <div className={`toast ${toastOn ? "on" : ""}`} role="status">{hud.toast}</div>
 
       {wishOpen && (
         <form className="wish" onSubmit={submitWish}>
