@@ -65,7 +65,7 @@ function Scene({ onGame, db, me, font }: { onGame(g: Game | null): void; db: Sup
 }
 
 const EMPTY: HudState = {
-  online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myWish: null, carrying: false,
+  online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myLife: "", myWish: null, carrying: false,
   prompt: "", action: null, dropKind: null, canPray: false, prayWait: 0, canWish: false, cam: "따라가기", toastId: 0, toast: "",
 };
 
@@ -166,8 +166,8 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
           <div className={`chip stat ${hud.online ? "" : "offline"}`} role="img" aria-label={`접속 ${hud.people}명${hud.online ? "" : ", 연결 중"}`}><PersonIcon /><b>{hud.people}</b></div>
         </div>
         {hud.myMinutes !== null && (
-          <div className="chip stat mine" role="img" aria-label={`내 탑 ${hud.myStones}단, ${Math.max(0, hud.myMinutes)}분 남음`}>
-            <TowerIcon /><b>{hud.myStones}</b><ClockIcon /><b>{Math.max(0, hud.myMinutes)}</b>
+          <div className="chip stat mine" role="img" aria-label={`내 탑 ${hud.myStones}단, 남은 시간 ${hud.myLife}`}>
+            <TowerIcon /><b>{hud.myStones}</b><ClockIcon /><b>{hud.myLife}</b>
           </div>
         )}
         {ActionIcon && (

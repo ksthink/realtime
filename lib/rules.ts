@@ -7,3 +7,10 @@ export const WISH_MAX = 24;
 export const PRAY_COOLDOWN_MS = 10 * 60 * 1000;
 export const PICK_RANGE = 1.6;
 export const PRAY_RANGE = 3.2;
+
+// 남은 시간(ms) → "24:00:00". 시간은 24를 넘으면 그대로 커진다 ("25:00:00")
+export function formatLife(ms: number) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const p = (v: number) => String(v).padStart(2, "0");
+  return `${p(Math.floor(total / 3600))}:${p(Math.floor(total / 60) % 60)}:${p(total % 60)}`;
+}

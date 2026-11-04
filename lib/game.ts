@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { CharacterRow, DropResult, NetEvents, Pose, StoneRow, TowerRow } from "./net";
 import { Net } from "./net";
-import { MAX_STONES, PICK_RANGE, PRAY_COOLDOWN_MS, PRAY_RANGE, STACK_RADIUS, TOWER_GAP, WISH_AT } from "./rules";
+import { formatLife, MAX_STONES, PICK_RANGE, PRAY_COOLDOWN_MS, PRAY_RANGE, STACK_RADIUS, TOWER_GAP, WISH_AT } from "./rules";
 import { WORLD, clamp, isWater, lerp, terrainY } from "./terrain";
 import { type Blob, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
@@ -10,7 +10,7 @@ import { buildWorld } from "./three/world";
 
 export type HudState = {
   online: boolean; people: number; towers: number;
-  myStones: number; myMinutes: number | null; myWish: string | null;
+  myStones: number; myMinutes: number | null; myLife: string; myWish: string | null;
   carrying: boolean; prompt: string; action: "first" | "stack" | "discard" | "blocked" | "pick" | "pray" | null; dropKind: "first" | "stack" | "discard" | "blocked" | null;
   canPray: boolean; prayWait: number; canWish: boolean; cam: string; toastId: number; toast: string;
 };
@@ -492,9 +492,9 @@ export class Game {
       t.label.sprite.visible = mine || dist < LABEL_RANGE;
       t.label.sprite.position.set(t.row.x, t.top + 0.3, t.row.z);
       const left = Date.parse(t.row.expires_at) - now;
-      const mins = Math.ceil(left / 60000);
       const name = mine ? "내 탑" : `${t.row.owner_name}의 탑`;
-      t.label.set(t.row.wish, left > 0 ? `${name} · ${mins}분 남음` : `${name} · 곧 사라져요`, left < 10 * 60000, mine);
+      // 초마다 바뀌므로 보이는 라벨만 다시 그린다
+      if (t.label.sprite.visible) t.label.set(t.row.wish, left > 0 ? `${name} · ${formatLife(left)}` : `${name} · 곧 사라져요`, left < 10 * 60000, mine);
     }
 
     // 내 첫돌 표시: 멀리서도 보이는 빛기둥과, 돌을 들었을 때 쌓이는 범위
@@ -614,6 +614,7 @@ export class Game {
       online: this.online, people: this.people, towers: this.towers.size,
       myStones: mine ? this.towerStoneCount(mine.row.id) : 0,
       myMinutes: mine ? Math.ceil((Date.parse(mine.row.expires_at) - Date.now()) / 60000) : null,
+      myLife: mine ? formatLife(Date.parse(mine.row.expires_at) - Date.now()) : "",
       myWish: mine?.row.wish ?? null,
       carrying: !!this.myHeld, prompt, action, dropKind: kind,
       canPray: !!near, prayWait: near ? Math.ceil(this.prayWait(near.row.id) / 60000) : 0,
