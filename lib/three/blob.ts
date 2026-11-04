@@ -207,8 +207,10 @@ export function makeBlob(init: BlobInit, font: string): Blob {
   prayArms.visible = false;
   g.add(prayArms);
   const armY = legLen + H * (0.52 + r() * 0.16), armL = 0.8 + r() * 0.5, handS = 0.8 + r() * 0.5;
-  const chest = hit(0, armY + 0.05, 5, 0, 0, -1);
-  const prayAt = new THREE.Vector3(0, armY + 0.12, (chest ? chest.point.z : W * 0.45) + 0.2);
+  // 얼굴(몸통 높이의 50~78%)을 가리지 않도록 손은 그 아래 가슴 앞에 모은다
+  const prayY = legLen + H * 0.34;
+  const chest = hit(0, prayY, 5, 0, 0, -1);
+  const prayAt = new THREE.Vector3(0, prayY, (chest ? chest.point.z : W * 0.45) + 0.14);
   for (const s of [-1, 1]) {
     const h = hit(s * 5, armY, 0.05, -s, 0, 0);
     const p = new THREE.Group();

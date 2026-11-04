@@ -43,7 +43,7 @@ export class TowerLabel {
       ctx.fillText(wish, 320, y + 54, 600);
     }
     ctx.font = `30px ${this.font}`;
-    ctx.fillStyle = urgent ? "#d4574a" : "#8b7f93";
+    ctx.fillStyle = urgent ? "#d4574a" : "#6f6478";
     ctx.fillText(sub, 320, y + (wish ? 102 : 44), 600);
     this.tex.needsUpdate = true;
   }
