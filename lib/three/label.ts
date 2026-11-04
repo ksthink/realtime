@@ -54,7 +54,7 @@ export class TowerLabel {
   }
 }
 
-// 합장 때 탑에서 떠오르는 "+10분"
+// 합장 때 탑에서 떠오르는 "+1시간"
 export function floatingText(text: string, font: string) {
   const cv = document.createElement("canvas");
   cv.width = 256; cv.height = 96;

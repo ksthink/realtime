@@ -147,10 +147,10 @@ if (live) {
   const { data: prayed } = await db.rpc("pray", { p_tower: live.id });
   assert.equal(prayed.ok, true);
   await peer.send({ type: "broadcast", event: "pray", payload: { id: peerId, tower: live.id } });
-  await until((t) => Date.parse(window.__doltap.debugState().towers[0].expires_at) > t + 500000, before);
+  await until((t) => Date.parse(window.__doltap.debugState().towers[0].expires_at) > t + 3000000, before);
   await a.waitForTimeout(700);
   await a.screenshot({ path: `${out}/5-peer-pray.png` });
-  console.log("ok 합장으로 수명 +10분이 실시간 전파");
+  console.log("ok 합장으로 수명 +1시간이 실시간 전파");
 
   // 내가 합장하고 쿨다운 안내
   await a.evaluate(() => window.__doltap.prayAction());
@@ -165,7 +165,7 @@ if (live) {
   console.log("ok 합장 자세와 쿨다운");
 
   // 수명 만료 처리는 tests/rules.test.mjs가 확인한다. 라벨 문구 확인
-  assert.ok((await state()).hud.myMinutes >= 70);
+  assert.ok((await state()).hud.myMinutes >= 1500);
 }
 
 // 합장 자세를 정면에서

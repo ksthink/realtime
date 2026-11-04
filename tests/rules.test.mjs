@@ -122,25 +122,25 @@ test("10단이 차면 더 쌓이지 않고 바닥에 놓인다", async () => {
   clean(p);
 });
 
-test("합장: 기본 1시간에 +10분, 같은 탑은 10분에 한 번, 다른 사람은 따로 가능", async () => {
+test("합장: 기본 하루에 +1시간, 같은 탑은 10분에 한 번, 다른 사람은 따로 가능", async () => {
   const [a, b] = [await player("탑주"), await player("행인")];
   const { tower_id: t } = await carryAndDrop(a, stone(0.35), 40, 5);
   const minutes = () => Math.round(Number(sql(`select extract(epoch from expires_at - now())/60 from towers where id='${t}'`)));
-  assert.equal(minutes(), 60);
+  assert.equal(minutes(), 1440);
 
   assert.equal((await rpc(b, "pray", { p_tower: t })).ok, true);
-  assert.equal(minutes(), 70);
+  assert.equal(minutes(), 1500);
   const again = await rpc(b, "pray", { p_tower: t });
   assert.equal(again.ok, false);
   assert.equal(again.reason, "cooldown");
-  assert.equal(minutes(), 70);
+  assert.equal(minutes(), 1500);
 
   assert.equal((await rpc(a, "pray", { p_tower: t })).ok, true); // 자기 탑도 가능
-  assert.equal(minutes(), 80);
+  assert.equal(minutes(), 1560);
 
   sql(`update prayers set prayed_at = now() - interval '10 minutes 1 second' where tower_id='${t}' and user_id='${b.uid}'`);
   assert.equal((await rpc(b, "pray", { p_tower: t })).ok, true); // 쿨다운 뒤 다시
-  assert.equal(minutes(), 90);
+  assert.equal(minutes(), 1620);
   clean(a);
 });
 

@@ -179,7 +179,7 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
       <div className="hud tr keys">
         <div className="chip key"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · 드래그 회전</div>
         <div className="chip key"><kbd>E</kbd> 줍기 · 놓기</div>
-        <div className="chip key"><kbd>Q</kbd> 합장 (탑 수명 +10분)</div>
+        <div className="chip key"><kbd>Q</kbd> 합장 (탑 수명 +1시간)</div>
         <div className="chip key"><kbd>F</kbd> 소원 · {WISH_AT}단부터</div>
         <div className="chip key"><kbd>C</kbd> 카메라 {hud.cam}</div>
         <button type="button" className="chip key link" onClick={onResculpt}>캐릭터 다시 빚기</button>

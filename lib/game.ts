@@ -231,7 +231,7 @@ export class Game {
   }
 
   private floatAt(t: TowerView) {
-    const sprite = floatingText("+10분", this.font);
+    const sprite = floatingText("+1시간", this.font);
     sprite.position.set(t.row.x, t.top + 0.4, t.row.z);
     this.root.add(sprite);
     this.floaters.push({ sprite, t: 0 });
@@ -369,7 +369,7 @@ export class Game {
       if (r.expires_at) t.row = { ...t.row, expires_at: r.expires_at };
       this.floatAt(t);
       this.net.sendPray(t.row.id);
-      this.toast("합장했어요. 탑의 수명이 10분 늘었어요");
+      this.toast("합장했어요. 탑의 수명이 1시간 늘었어요");
     } else {
       this.me.state = "idle";
       if (r.reason === "cooldown" && r.prayed_at) this.prayers.set(t.row.id, Date.parse(r.prayed_at));
