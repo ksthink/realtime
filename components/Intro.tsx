@@ -93,9 +93,10 @@ export function Intro({ db, onEnter }: { db: SupabaseClient; onEnter(): void }) 
         </Canvas>
       </div>
       <main className="intro-front">
-        <h1>돌탑 마을</h1>
+        <h1><span>어서 놔요,</span> <span>소원 돌탑</span></h1>
         <p role="img" aria-label={people === null ? `정원 ${MAX_PEOPLE}명` : `현재 접속 ${people}명, 정원 ${MAX_PEOPLE}명`}>{people ?? "–"} / {MAX_PEOPLE}</p>
         <button type="button" disabled={full} onClick={() => { unlockSound(); void enter(); }}>{full ? "정원이 찼어요" : "입장"}</button>
+        <a className="intro-credit" href="https://metaphr.dev" target="_blank" rel="noopener noreferrer">제작자 (C) metaphr.dev</a>
       </main>
     </div>
   );

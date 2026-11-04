@@ -46,7 +46,7 @@ export default function App() {
   }, []);
 
   if (!supabaseConfigured || !supabase) {
-    return <div className="center"><h1>돌탑 마을</h1><p>Supabase 환경변수가 설정되지 않았어요. <code>.env.example</code>을 확인해 주세요.</p></div>;
+    return <div className="center"><h1>어서 놔요, 소원 돌탑</h1><p>Supabase 환경변수가 설정되지 않았어요. <code>.env.example</code>을 확인해 주세요.</p></div>;
   }
   if (phase.kind === "loading") return <div className="center"><p>마을로 가는 길…</p></div>;
   if (phase.kind === "error") return <div className="center"><h1>들어가지 못했어요</h1><p>{phase.message}</p></div>;
