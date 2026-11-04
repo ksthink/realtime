@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import * as THREE from "three";
-import { Game, type HudState } from "@/lib/game";
+import { Game, type HudState, type PlayerSpot } from "@/lib/game";
 import { type CharacterRow, Net } from "@/lib/net";
 import { WISH_AT, WISH_MAX } from "@/lib/rules";
 import { soundDebug, startSound } from "@/lib/sound";
@@ -28,13 +28,13 @@ const REACTION_BUTTONS = [
   { kind: "sad", emoji: "😢", label: "슬픔" },
 ] as const;
 
-function Scene({ onGame, db, me, font }: { onGame(g: Game | null): void; db: SupabaseClient; me: CharacterRow; font: string }) {
+function Scene({ onGame, db, me, font, start }: { onGame(g: Game | null): void; db: SupabaseClient; me: CharacterRow; font: string; start?: PlayerSpot }) {
   const { scene, camera, gl } = useThree();
   const game = useRef<Game | null>(null);
 
   useEffect(() => {
     gl.toneMappingExposure = 0.78;
-    const g = new Game(scene, camera as THREE.PerspectiveCamera, (ev) => new Net(db, me.user_id, me.name, ev), me, font);
+    const g = new Game(scene, camera as THREE.PerspectiveCamera, (ev) => new Net(db, me.user_id, me.name, ev), me, font, start);
     game.current = g;
     onGame(g);
     g.net.start();
@@ -67,7 +67,7 @@ function Scene({ onGame, db, me, font }: { onGame(g: Game | null): void; db: Sup
       game.current = null;
       onGame(null);
     };
-  }, [scene, camera, gl, db, me, font, onGame]);
+  }, [scene, camera, gl, db, me, font, onGame, start]);
 
   useFrame((_, dt) => game.current?.update(Math.min(dt, 0.1)));
   return null;
@@ -78,7 +78,7 @@ const EMPTY: HudState = {
   prompt: "", action: null, dropKind: null, canPray: false, prayWait: 0, canWish: false, cam: "따라가기", toastId: 0, toast: "",
 };
 
-export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me: CharacterRow; font: string; onResculpt(): void }) {
+export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClient; me: CharacterRow; font: string; start?: PlayerSpot; onResculpt(at: PlayerSpot): void }) {
   const [game, setGame] = useState<Game | null>(null);
   const [hud, setHud] = useState(EMPTY);
   const [toastOn, setToastOn] = useState(false);
@@ -168,7 +168,7 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
   return (
     <div className="stage">
       <Canvas shadows="percentage" camera={{ fov: 42, near: 0.1, far: 260, position: [0, 5, 9] }} dpr={[1, 2]}>
-        <Scene onGame={setGame} db={db} me={me} font={font} />
+        <Scene onGame={setGame} db={db} me={me} font={font} start={start} />
       </Canvas>
 
       <div className="hud tl">
@@ -192,7 +192,7 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
         <div className="chip key icon" role="img" aria-label="E 키로 돌 줍기, 놓기"><kbd>E</kbd><PickIcon /></div>
         <div className="chip key icon" role="img" aria-label="Q 키로 기도"><kbd>Q</kbd><PrayIcon /></div>
         <div className="chip key icon" role="img" aria-label={`C 키로 뷰 전환, 지금은 ${hud.cam}`}><kbd>C</kbd><CameraIcon /></div>
-        <button type="button" className="chip key icon link" onClick={onResculpt} aria-label="캐릭터 다시 빚기" title="캐릭터 다시 빚기"><SculptIcon /></button>
+        <button type="button" className="chip key icon link" onClick={() => { if (game) onResculpt(game.spot); }} aria-label="캐릭터 다시 빚기" title="캐릭터 다시 빚기"><SculptIcon /></button>
       </div>
 
       <div className="marker" ref={markerRef} style={{ display: "none" }}>

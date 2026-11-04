@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { PlayerSpot } from "@/lib/game";
 import type { CharacterRow } from "@/lib/net";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { GameView } from "./GameView";
@@ -19,7 +20,7 @@ function ensureSession(db: NonNullable<typeof supabase>) {
   })());
 }
 
-type Phase = { kind: "loading" } | { kind: "error"; message: string } | { kind: "intro"; uid: string; me: CharacterRow | null } | { kind: "sculpt"; uid: string } | { kind: "play"; me: CharacterRow };
+type Phase = { kind: "loading" } | { kind: "error"; message: string } | { kind: "intro"; uid: string; me: CharacterRow | null } | { kind: "sculpt"; uid: string; back?: { me: CharacterRow; at: PlayerSpot } } | { kind: "play"; me: CharacterRow; at?: PlayerSpot };
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
@@ -66,7 +67,9 @@ export default function App() {
       if (error) setError(`저장하지 못했어요: ${error.message}`);
       else setPhase({ kind: "play", me: row });
     };
-    return <Sculptor busy={busy} error={error} onDone={done} />;
+    // 게임 중에 다시 빚을 때만 취소할 수 있다. 처음 입장할 때는 돌아갈 곳이 없다
+    const { back } = phase;
+    return <Sculptor busy={busy} error={error} onDone={done} onCancel={back && (() => { setError(""); setPhase({ kind: "play", me: back.me, at: back.at }); })} />;
   }
-  return <GameView db={supabase} me={phase.me} font={font} onResculpt={() => setPhase({ kind: "sculpt", uid: phase.me.user_id })} />;
+  return <GameView db={supabase} me={phase.me} font={font} start={phase.at} onResculpt={(at) => setPhase({ kind: "sculpt", uid: phase.me.user_id, back: { me: phase.me, at } })} />;
 }

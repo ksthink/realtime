@@ -72,6 +72,19 @@ function usePeople(db: SupabaseClient) {
   return { people, leave: () => { stop.current(); return closing; } };
 }
 
+const TITLE = ["어서 놔요,", "소원 돌탑"];
+
+// 글자마다 시작을 조금씩 늦춰 물결치게 한다. 글자 단위 span은 화면 낭독에서 숨긴다
+function WaveText({ text, start }: { text: string; start: number }) {
+  return (
+    <span className="intro-phrase" aria-hidden="true">
+      {[...text].map((ch, i) => (
+        <span key={i} className="intro-char" style={{ animationDelay: `${(start + i) * 0.12}s` }}>{ch === " " ? "\u00a0" : ch}</span>
+      ))}
+    </span>
+  );
+}
+
 export function Intro({ db, onEnter }: { db: SupabaseClient; onEnter(): void }) {
   const { people, leave } = usePeople(db);
   const going = useRef(false);
@@ -93,10 +106,10 @@ export function Intro({ db, onEnter }: { db: SupabaseClient; onEnter(): void }) 
         </Canvas>
       </div>
       <main className="intro-front">
-        <h1><span>어서 놔요,</span> <span>소원 돌탑</span></h1>
+        <h1 aria-label={TITLE.join(" ")}>{TITLE.map((phrase, p) => <WaveText key={p} text={phrase} start={p === 0 ? 0 : TITLE[0].length} />)}</h1>
         <p role="img" aria-label={people === null ? `정원 ${MAX_PEOPLE}명` : `현재 접속 ${people}명, 정원 ${MAX_PEOPLE}명`}>{people ?? "–"} / {MAX_PEOPLE}</p>
         <button type="button" disabled={full} onClick={() => { unlockSound(); void enter(); }}>{full ? "정원이 찼어요" : "입장"}</button>
-        <a className="intro-credit" href="https://metaphr.dev" target="_blank" rel="noopener noreferrer">제작자 (C) metaphr.dev</a>
+        <a className="intro-credit" href="https://metaphr.dev" target="_blank" rel="noopener noreferrer">© metaphr.dev</a>
       </main>
     </div>
   );

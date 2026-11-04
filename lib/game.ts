@@ -30,6 +30,9 @@ const SUN_OFF = new THREE.Vector3(8, 14, 6);
 const UP = new THREE.Vector3(0, 1, 0);
 const LABEL_RANGE = 45;
 
+// 다시 빚기를 취소하고 돌아올 자리
+export type PlayerSpot = { x: number; z: number; yaw: number };
+
 export class Game {
   readonly net: Net;
   private root = new THREE.Group();
@@ -70,6 +73,7 @@ export class Game {
     netFactory: (ev: NetEvents) => Net,
     meRow: CharacterRow,
     private font: string,
+    start?: PlayerSpot,
   ) {
     scene.background = new THREE.Color("#d9e3ef");
     scene.fog = new THREE.Fog("#d9e3ef", 48, 150);
@@ -87,6 +91,10 @@ export class Game {
     this.me = this.makeAvatar(meRow);
     const a = Math.random() * Math.PI * 2;
     this.me.g.position.set(Math.cos(a) * 2.5, 0, Math.sin(a) * 2.5);
+    if (start) {
+      this.me.g.position.set(start.x, 0, start.z);
+      this.me.yaw = start.yaw;
+    }
     this.me.baseY = terrainY(this.me.g.position.x, this.me.g.position.z);
 
     this.beacon = makeBeacon();
@@ -676,6 +684,11 @@ export class Game {
   }
   debugTeleport(x: number, z: number) {
     this.me.g.position.set(x, 0, z);
+  }
+
+  get spot(): PlayerSpot {
+    const p = this.me.g.position;
+    return { x: p.x, z: p.z, yaw: this.me.yaw };
   }
 
   dispose() {

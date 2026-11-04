@@ -190,7 +190,7 @@ function Clay({ apiRef }: { apiRef: React.MutableRefObject<Api | null> }) {
   return <primitive object={state.mesh} />;
 }
 
-export function Sculptor({ busy, error, onDone }: { busy: boolean; error: string; onDone(r: SculptResult): void }) {
+export function Sculptor({ busy, error, onDone, onCancel }: { busy: boolean; error: string; onDone(r: SculptResult): void; onCancel?(): void }) {
   const api = useRef<Api | null>(null);
   const [shape, setShape] = useState("sphere");
   const [name, setName] = useState("");
@@ -231,6 +231,7 @@ export function Sculptor({ busy, error, onDone }: { busy: boolean; error: string
             <button type="button" onClick={() => api.current?.smooth()}>매끈하게</button>
             <button type="button" onClick={() => api.current?.recolor()}>다른 색</button>
             <button type="button" onClick={() => api.current?.shape(shape)}>처음부터</button>
+            {onCancel && <button type="button" onClick={onCancel}>취소</button>}
             <button type="submit" className="go" disabled={busy || !trimmed}>{busy ? "들어가는 중…" : "마을로 들어가기"}</button>
           </div>
         </form>

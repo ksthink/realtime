@@ -1,6 +1,6 @@
 // 배경음과 효과음. 파일은 public/sound에 있다.
 // 원본 음량 차이가 커서(숲 바람 최대 4%, out 96%) 소리별로 보정한다.
-const LEVEL = { wind: 6, spool: 3, water: 1.5, step: 1, in: 3, out: 0.6 };
+const LEVEL = { wind: 6, spool: 3, water: 1.5, step: 0.7, in: 3, out: 0.6 };
 const FILES = {
   wind: "forest_wind", spool: "forese_spool", water: "water", step: "step", in: "in", out: "out",
 } as const;
@@ -8,11 +8,13 @@ type Name = keyof typeof FILES;
 
 const SPOOL_GAP_MIN = 25, SPOOL_GAP_MAX = 70; // 숲 소리 사이 간격(초)
 const WATER_NEAR = 3, WATER_FAR = 24; // 이 거리 안이면 최대, 밖이면 들리지 않음(미터)
-// step.wav에 든 발소리 세 개: 시작(초), 길이(초), 음량 보정(원본 최대 12%, 8.5%, 19%를 같은 크기로)
+// step.wav의 발소리 중 묵직한 두 개만 쓴다: 시작(초), 음량 보정(원본 최대 12%, 19%를 같은 크기로).
+// 0.81초의 소리는 저음이 적고 날카로워 "쿵쿵짜"로 들리므로 뺐다.
+// 걸음 간격(약 0.35초)보다 짧게 잘라 소리가 겹치지 않게 한다
+const STEP_DUR = 0.28;
 const STEP_SLICES = [
-  { at: 0.08, dur: 0.5, gain: 2 },
-  { at: 0.79, dur: 0.42, gain: 2.8 },
-  { at: 1.54, dur: 0.4, gain: 1.3 },
+  { at: 0.09, gain: 2 },
+  { at: 1.55, gain: 1.3 },
 ];
 
 let ctx: AudioContext | null = null;
@@ -24,7 +26,6 @@ let running = false;
 let loops: AudioBufferSourceNode[] = [];
 let waterGain: GainNode | null = null;
 let stepNode: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
-let stepIndex = 0;
 let stepCount = 0, dropCount = 0;
 let spoolTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -126,17 +127,20 @@ export function setWaterDistance(distance: number) {
 export function playStep() {
   const buf = buffers.step;
   if (!ctx || !master || !buf || !running) return;
-  const slice = STEP_SLICES[stepIndex++ % STEP_SLICES.length];
-  const now = ctx.currentTime;
+  // 박자가 생기지 않게 소리를 무작위로 고르고, 음높이와 크기도 조금씩 바꾼다
+  const slice = STEP_SLICES[Math.floor(Math.random() * STEP_SLICES.length)];
+  const rate = 0.94 + Math.random() * 0.12, level = 0.85 + Math.random() * 0.3;
+  const now = ctx.currentTime, length = STEP_DUR / rate;
   const gain = ctx.createGain();
-  gain.gain.setValueAtTime(slice.gain * LEVEL.step, now);
-  gain.gain.setTargetAtTime(0, now + slice.dur - 0.06, 0.02); // 끝이 끊기지 않게 살짝 줄인다
+  gain.gain.setValueAtTime(slice.gain * LEVEL.step * level, now);
+  gain.gain.setTargetAtTime(0, now + length - 0.07, 0.02); // 끝이 끊기지 않게 살짝 줄인다
   gain.connect(master);
   const src = ctx.createBufferSource();
   src.buffer = buf;
+  src.playbackRate.value = rate;
   src.connect(gain);
   src.onended = () => gain.disconnect();
-  src.start(now, slice.at, slice.dur);
+  src.start(now, slice.at, STEP_DUR);
   stepNode = { src, gain };
   stepCount++;
 }
