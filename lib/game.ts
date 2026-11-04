@@ -341,7 +341,7 @@ export class Game {
   private onDropResult(r: DropResult) {
     const msg: Record<DropResult["result"], string> = {
       first: "첫돌을 놓았어요! 빛기둥이 내 탑을 알려줘요",
-      stacked: r.count === WISH_AT ? `${WISH_AT}단! 이제 소원을 적을 수 있어요 (F)` : `${r.count}단!`,
+      stacked: (r.count ?? 0) >= WISH_AT && !this.myTower?.row.wish ? `${r.count}단! 소원을 적을 수 있어요 (F)` : `${r.count}단!`,
       collapsed: "와르르… 탑이 무너져 소원도 사라졌어요",
       discarded: "돌을 버렸어요. 첫돌 근처에 놓아야 쌓여요",
       too_close: "다른 탑과 너무 가까워요. 돌은 바닥에 놓였어요",

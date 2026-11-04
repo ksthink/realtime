@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { Game, type HudState } from "@/lib/game";
 import { type CharacterRow, Net } from "@/lib/net";
 import { WISH_AT, WISH_MAX } from "@/lib/rules";
-import { ClockIcon, DiscardIcon, FirstStoneIcon, PersonIcon, PickIcon, PrayIcon, StackIcon, TowerIcon } from "./Icons";
+import { CameraIcon, ClockIcon, CloseIcon, DiscardIcon, DragIcon, FirstStoneIcon, PersonIcon, PickIcon, PrayIcon, SculptIcon, StackIcon, TowerIcon, WishIcon } from "./Icons";
 
 const TOAST_MS = 5000;
 
@@ -75,6 +75,7 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
   const [toastOn, setToastOn] = useState(false);
   const [wishOpen, setWishOpen] = useState(false);
   const [wish, setWish] = useState("");
+  const [helpOpen, setHelpOpen] = useState(false);
   const markerRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
@@ -128,6 +129,7 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
       if (e.code === "KeyQ") void game.prayAction();
       if (e.code === "KeyC") game.cycleCam();
       if (e.code === "KeyF") { e.preventDefault(); openWish(); }
+      if (e.code === "Escape") setHelpOpen(false);
     };
     const up = (e: KeyboardEvent) => game.setKey(e.code, false);
     const blur = () => game.releaseKeys();
@@ -177,12 +179,11 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
         )}
       </div>
       <div className="hud tr keys">
-        <div className="chip key"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · 드래그 회전</div>
-        <div className="chip key"><kbd>E</kbd> 줍기 · 놓기</div>
-        <div className="chip key"><kbd>Q</kbd> 합장 (탑 수명 +1시간)</div>
-        <div className="chip key"><kbd>F</kbd> 소원 · {WISH_AT}단부터</div>
-        <div className="chip key"><kbd>C</kbd> 카메라 {hud.cam}</div>
-        <button type="button" className="chip key link" onClick={onResculpt}>캐릭터 다시 빚기</button>
+        <div className="chip key dpad" role="img" aria-label="W A S D 키로 이동"><kbd className="up">W</kbd><kbd className="left">A</kbd><kbd className="down">S</kbd><kbd className="right">D</kbd></div>
+        <div className="chip key icon" role="img" aria-label="E 키로 돌 줍기, 놓기"><kbd>E</kbd><PickIcon /></div>
+        <div className="chip key icon" role="img" aria-label="Q 키로 기도"><kbd>Q</kbd><PrayIcon /></div>
+        <div className="chip key icon" role="img" aria-label={`C 키로 뷰 전환, 지금은 ${hud.cam}`}><kbd>C</kbd><CameraIcon /></div>
+        <button type="button" className="chip key icon link" onClick={onResculpt} aria-label="캐릭터 다시 빚기" title="캐릭터 다시 빚기"><SculptIcon /></button>
       </div>
 
       <div className="marker" ref={markerRef} style={{ display: "none" }}>
@@ -191,6 +192,29 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
       </div>
 
       <div className={`toast ${toastOn ? "on" : ""}`} role="status">{hud.toast}</div>
+
+      <button type="button" className="chip help-btn" onClick={() => setHelpOpen(true)} aria-label="조작 방법 보기">?</button>
+
+      {helpOpen && (
+        <div className="help-back" onClick={() => setHelpOpen(false)}>
+          <div className="help" role="dialog" aria-modal="true" aria-label="조작 방법" onClick={(e) => e.stopPropagation()}>
+            <div className="help-head">
+              <h2>조작 방법</h2>
+              <button type="button" autoFocus onClick={() => setHelpOpen(false)} aria-label="닫기"><CloseIcon /></button>
+            </div>
+            <dl>
+              <div className="only-key"><dt><span className="dpad"><kbd className="up">W</kbd><kbd className="left">A</kbd><kbd className="down">S</kbd><kbd className="right">D</kbd></span></dt><dd>방향. 방향키도 됩니다</dd></div>
+              <div className="only-touch"><dt>조이스틱</dt><dd>왼쪽 아래 조이스틱으로 이동</dd></div>
+              <div><dt><DragIcon /></dt><dd>화면을 드래그해 카메라 돌리기</dd></div>
+              <div><dt><PickIcon /><kbd className="only-key">E</kbd></dt><dd>줍기/놓기. 내 첫돌 근처에 놓아야 쌓입니다</dd></div>
+              <div><dt><PrayIcon /><kbd className="only-key">Q</kbd></dt><dd>기도. 탑 옆에서 하면 수명이 1시간 늘어납니다</dd></div>
+              <div><dt><WishIcon /><kbd className="only-key">F</kbd></dt><dd>내 탑이 {WISH_AT}단이 되면 소원 적기</dd></div>
+              <div><dt><CameraIcon /><kbd className="only-key">C</kbd></dt><dd>뷰 전환</dd></div>
+              <div><dt><SculptIcon /></dt><dd>캐릭터 다시 빚기</dd></div>
+            </dl>
+          </div>
+        </div>
+      )}
 
       {wishOpen && (
         <form className="wish" onSubmit={submitWish}>
