@@ -7,3 +7,4 @@ next-env.d.ts
 reference
 supabase/.branches
 supabase/.temp
+.omc

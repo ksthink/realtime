@@ -158,7 +158,7 @@ if (live) {
   await a.screenshot({ path: `${out}/6-my-pray.png` });
   const k = (await state()).me.prayK;
   assert.ok(k > 0.5, `합장 자세가 아님 ${k}`);
-  await a.waitForTimeout(1500);
+  await until(() => window.__doltap.debugState().me.state === "idle");
   await a.evaluate(() => window.__doltap.prayAction());
   await a.waitForTimeout(300);
   assert.match((await state()).hud.toast, /다시 기도/);
