@@ -190,7 +190,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
       <div className="hud tr keys">
         <div className="chip key dpad" role="img" aria-label="W A S D 키로 이동"><kbd className="up">W</kbd><kbd className="left">A</kbd><kbd className="down">S</kbd><kbd className="right">D</kbd></div>
         <div className="chip key icon" role="img" aria-label="E 키로 돌 줍기, 놓기"><kbd>E</kbd><PickIcon /></div>
-        <div className="chip key icon" role="img" aria-label="Q 키로 기도"><kbd>Q</kbd><PrayIcon /></div>
+        <div className="chip key icon" role="img" aria-label="Q 키로 합장"><kbd>Q</kbd><PrayIcon /></div>
         <div className="chip key icon" role="img" aria-label={`C 키로 뷰 전환, 지금은 ${hud.cam}`}><kbd>C</kbd><CameraIcon /></div>
         <button type="button" className="chip key icon link" onClick={() => { if (game) onResculpt(game.spot); }} aria-label="캐릭터 다시 빚기" title="캐릭터 다시 빚기"><SculptIcon /></button>
       </div>
@@ -223,7 +223,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
               <div className="only-touch"><dt>조이스틱</dt><dd>왼쪽 아래 조이스틱으로 이동</dd></div>
               <div><dt><DragIcon /></dt><dd>화면을 드래그해 카메라 돌리기</dd></div>
               <div><dt><PickIcon /><kbd className="only-key">E</kbd></dt><dd>줍기/놓기. 내 첫돌 근처에 놓아야 쌓입니다</dd></div>
-              <div><dt><PrayIcon /><kbd className="only-key">Q</kbd></dt><dd>기도. 탑 옆에서 하면 수명이 1시간 늘어납니다</dd></div>
+              <div><dt><PrayIcon /><kbd className="only-key">Q</kbd></dt><dd>합장. 탑 옆에서 하면 수명이 1시간 늘어납니다</dd></div>
               <div><dt><WishIcon /><kbd className="only-key">F</kbd></dt><dd>내 탑이 {WISH_AT}단이 되면 소원 적기</dd></div>
               <div><dt><CameraIcon /><kbd className="only-key">C</kbd></dt><dd>뷰 전환</dd></div>
               <div><dt><span aria-hidden="true">😌👋😆😢</span></dt><dd>쉬기, 인사, 기쁨, 슬픔. 움직이면 끝나고, 돌을 들고는 할 수 없습니다</dd></div>

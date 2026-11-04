@@ -386,7 +386,7 @@ export class Game {
     const t = this.nearestTower(PRAY_RANGE);
     if (!t) { this.toast("탑 가까이에서 합장할 수 있어요"); return; }
     const wait = this.prayWait(t.row.id);
-    if (wait > 0) { this.toast(`이 탑에는 ${Math.ceil(wait / 60000)}분 뒤 다시 기도할 수 있어요`); return; }
+    if (wait > 0) { this.toast(`이 탑에는 ${Math.ceil(wait / 60000)}분 뒤 다시 합장할 수 있어요`); return; }
     const p = this.me.g.position;
     this.me.yaw = Math.atan2(t.row.x - p.x, t.row.z - p.z);
     this.me.state = "pray"; this.me.stateT = 0;
@@ -403,7 +403,7 @@ export class Game {
     } else {
       this.me.state = "idle";
       if (r.reason === "cooldown" && r.prayed_at) this.prayers.set(t.row.id, Date.parse(r.prayed_at));
-      this.toast(r.reason === "cooldown" ? "이 탑에는 조금 뒤 다시 기도할 수 있어요" : "기도하지 못했어요");
+      this.toast(r.reason === "cooldown" ? "이 탑에는 조금 뒤 다시 합장할 수 있어요" : "합장하지 못했어요");
     }
   }
 

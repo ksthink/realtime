@@ -44,10 +44,24 @@ function onVisibility() {
   else void ctx.resume();
 }
 
+// 끊긴 오디오를 다시 깨운다. iOS는 다른 앱에 다녀오면 멈춘 채 남아 사용자 입력이 있어야 풀린다
+function wake() {
+  if (ctx && ctx.state !== "running" && !document.hidden) void ctx.resume();
+}
+
 // 브라우저는 사용자 입력 없이 소리를 내지 못한다. 입장 버튼의 클릭 안에서 호출한다
 export function unlockSound() {
   if (ctx) { void ctx.resume(); return; }
+  // iOS의 무음 스위치를 켜 둬도 들리게 한다 (Safari 16.4 이상)
+  const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+  if (session) session.type = "playback";
   ctx = new AudioContext();
+  // iOS는 클릭 순간에 무언가 재생해야 오디오가 확실히 풀린다
+  const silent = ctx.createBufferSource();
+  silent.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+  silent.connect(ctx.destination);
+  silent.start();
+  for (const type of ["pointerdown", "touchend", "keydown"]) addEventListener(type, wake, { passive: true });
   master = ctx.createGain();
   // 소리가 겹쳐도 찢어지지 않게 마지막에 압축기를 둔다
   const limiter = ctx.createDynamicsCompressor();

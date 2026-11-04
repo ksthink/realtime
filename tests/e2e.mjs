@@ -162,7 +162,7 @@ if (live) {
   await until(() => window.__doltap.debugState().me.state === "idle");
   await a.evaluate(() => window.__doltap.prayAction());
   await a.waitForTimeout(300);
-  assert.match((await state()).hud.toast, /다시 기도/);
+  assert.match((await state()).hud.toast, /다시 합장/);
   console.log("ok 합장 자세와 쿨다운");
 
   // 수명 만료 처리는 tests/rules.test.mjs가 확인한다. 라벨 문구 확인
