@@ -60,7 +60,14 @@ type Api = {
 };
 
 function Clay({ apiRef }: { apiRef: React.MutableRefObject<Api | null> }) {
-  const { gl, camera } = useThree();
+  const { gl, camera, size } = useThree();
+
+  // 세로로 긴 화면에서는 멀리서 찍어 몸통이 위아래 버튼과 겹치지 않게 한다
+  useEffect(() => {
+    camera.position.z = Math.max(5, 4.1 / (size.width / size.height));
+    camera.updateProjectionMatrix();
+  }, [camera, size]);
+
   const state = useMemo(() => {
     const geo = createBodyGeometry();
     const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }));
@@ -212,7 +219,7 @@ export function Sculptor({ busy, error, onDone, onCancel }: { busy: boolean; err
       <div className="sculpt">
         <div>
           <h1>말랑이를 빚어 주세요</h1>
-          <p>몸통을 드래그해 밀고 당기고, 빈 곳을 드래그해 돌려요. 확인을 누를 때 보이는 쪽이 얼굴이 돼요.</p>
+          <p>몸통을 드래그해 밀고 당기고, 빈 곳을 드래그해 돌려요. 입장을 누를 때 보이는 쪽이 얼굴이 돼요.</p>
           <div className="shapes" role="group" aria-label="처음 모양">
             {Object.entries(SHAPES).map(([key, s]) => (
               <button type="button" key={key} className={shape === key ? "on" : ""} onClick={() => { setShape(key); api.current?.shape(key); }}>
