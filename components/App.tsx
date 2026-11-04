@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { CharacterRow } from "@/lib/net";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { GameView } from "./GameView";
+import { Intro } from "./Intro";
 import { type SculptResult, Sculptor } from "./Sculptor";
 
 // 개발 모드 StrictMode의 이중 실행에도 익명 계정이 하나만 생기도록 한 번만 수행한다
@@ -18,7 +19,7 @@ function ensureSession(db: NonNullable<typeof supabase>) {
   })());
 }
 
-type Phase = { kind: "loading" } | { kind: "error"; message: string } | { kind: "sculpt"; uid: string } | { kind: "play"; me: CharacterRow };
+type Phase = { kind: "loading" } | { kind: "error"; message: string } | { kind: "intro"; uid: string; me: CharacterRow | null } | { kind: "sculpt"; uid: string } | { kind: "play"; me: CharacterRow };
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
@@ -39,7 +40,7 @@ export default function App() {
       const uid = await ensureSession(db);
       const { data: me, error } = await db.from("characters").select("user_id,name,seed,top_color,bottom_color,body").eq("user_id", uid).maybeSingle();
       if (error) throw new Error(error.message);
-      if (!dead) setPhase(me ? { kind: "play", me: me as CharacterRow } : { kind: "sculpt", uid });
+      if (!dead) setPhase({ kind: "intro", uid, me: me as CharacterRow | null });
     })().catch((e: Error) => { if (!dead) setPhase({ kind: "error", message: e.message }); });
     return () => { dead = true; };
   }, []);
@@ -49,6 +50,10 @@ export default function App() {
   }
   if (phase.kind === "loading") return <div className="center"><p>마을로 가는 길…</p></div>;
   if (phase.kind === "error") return <div className="center"><h1>들어가지 못했어요</h1><p>{phase.message}</p></div>;
+
+  if (phase.kind === "intro") {
+    return <Intro db={supabase} onEnter={() => setPhase(phase.me ? { kind: "play", me: phase.me } : { kind: "sculpt", uid: phase.uid })} />;
+  }
 
   if (phase.kind === "sculpt") {
     const db = supabase;

@@ -33,7 +33,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
 .dpad .down { grid-area: 3 / 2; }
 .dpad .right { grid-area: 2 / 3; }
 
-.help-btn { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 5; width: 40px; height: 40px; padding: 0; font-size: 18px; color: var(--ink); }
+.help-btn { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 5; width: 28px; height: 28px; padding: 0; font-size: 14px; color: var(--ink); }
+.hud.reactions { left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); flex-direction: row; }
+.chip.react span { font-size: 22px; line-height: 1; }
+.chip.react { pointer-events: auto; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; color: var(--ink); }
+.chip.react:disabled { opacity: 0.45; cursor: default; }
 .help-back { position: fixed; inset: 0; z-index: 8; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(74, 63, 82, 0.25); }
 .help { width: min(420px, 100%); max-height: 100%; overflow: auto; background: rgba(255, 252, 246, 0.97); border-radius: 18px; padding: 18px 20px; box-shadow: 0 8px 30px rgba(74, 63, 82, 0.18); }
 .help-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
@@ -79,6 +83,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
   .only-key { display: none !important; }
   .only-touch { display: grid !important; }
   .stat.action kbd { display: none; }
+  /* 줍기 버튼 바로 아래 (전체 높이 40px 안) */
+  .help-btn { right: calc(max(24px, env(safe-area-inset-right, 0px)) + 24px); bottom: calc(6px + env(safe-area-inset-bottom, 0px)); }
+  /* 조이스틱(왼쪽 144px)과 줍기 버튼(오른쪽 100px) 사이의 가운데에 2×2. 폭 360px에서도 겹치지 않는다 */
+  .hud.reactions { left: calc(50% + 22px); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: repeat(2, 40px); }
+  .chip.react { width: 40px; height: 40px; }
 }
 
 /* 빚기 */

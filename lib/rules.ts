@@ -7,6 +7,7 @@ export const WISH_MAX = 24;
 export const PRAY_COOLDOWN_MS = 10 * 60 * 1000;
 export const PICK_RANGE = 1.6;
 export const PRAY_RANGE = 3.2;
+export const MAX_PEOPLE = 50; // 인트로 화면에서만 막는 정원. 서버는 강제하지 않는다
 
 // 남은 시간(ms) → "24:00:00". 시간은 24를 넘으면 그대로 커진다 ("25:00:00")
 export function formatLife(ms: number) {

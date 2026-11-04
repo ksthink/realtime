@@ -14,8 +14,9 @@ const a = await ctx.newPage();
 a.on("pageerror", (e) => errors.push(e.message));
 a.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 
-// ── 입장: 빚기 → 저장 → 게임 ──
+// ── 입장: 인트로 → 빚기 → 저장 → 게임 ──
 await a.goto(`${base}/?debug`, { waitUntil: "domcontentloaded" });
+await a.getByRole("button", { name: "입장" }).click();
 await a.getByPlaceholder("예: 감자").fill("감자");
 await a.mouse.move(500, 281); await a.mouse.down(); await a.mouse.move(640, 230, { steps: 8 }); await a.mouse.up();
 await a.waitForTimeout(600);
@@ -218,6 +219,7 @@ console.log("ok 메시지 5초 뒤 사라짐");
 // 새로고침해도 들고 있던 돌과 탑이 이어진다
 await pickNearest(0, 0.33);
 await a.reload({ waitUntil: "domcontentloaded" });
+await a.getByRole("button", { name: "입장" }).click();
 await a.waitForFunction(() => window.__doltap?.debugState().stones.length > 100, null, { timeout: 180000 });
 await until(() => window.__doltap.debugState().hud.carrying);
 console.log("ok 새로고침 뒤 세션·들고 있던 돌 복원");

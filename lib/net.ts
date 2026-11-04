@@ -1,4 +1,5 @@
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
+import type { Reaction } from "./three/blob";
 
 export type StoneRow = {
   id: string; seed: number; radius: number; height: number;
@@ -14,7 +15,7 @@ export type CharacterRow = {
   user_id: string; name: string; seed: number;
   top_color: string; bottom_color: string; body: string;
 };
-export type Pose = { id: string; x: number; z: number; yaw: number; m: boolean };
+export type Pose = { id: string; x: number; z: number; yaw: number; m: boolean; r?: Reaction };
 export type DropResult = { result: "first" | "stacked" | "collapsed" | "discarded" | "too_close" | "full" | "rejected"; count?: number };
 export type PrayResult = { ok: boolean; reason?: "gone" | "cooldown" | "auth"; expires_at?: string; prayed_at?: string };
 

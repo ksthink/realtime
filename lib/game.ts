@@ -3,7 +3,7 @@ import type { CharacterRow, DropResult, NetEvents, Pose, StoneRow, TowerRow } fr
 import { Net } from "./net";
 import { formatLife, MAX_STONES, PICK_RANGE, PRAY_COOLDOWN_MS, PRAY_RANGE, STACK_RADIUS, TOWER_GAP, WISH_AT } from "./rules";
 import { WORLD, clamp, isWater, lerp, terrainY } from "./terrain";
-import { type Blob, animateBlob, makeBlob } from "./three/blob";
+import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
 import { makeStoneMesh } from "./three/stone";
 import { buildWorld } from "./three/world";
@@ -53,7 +53,7 @@ export class Game {
   private camLook = new THREE.Vector3();
   private poseT = 0;
   private keepT = 0;
-  private lastSent = { x: 0, z: 0, yaw: 0 };
+  private lastSent: { x: number; z: number; yaw: number; r?: Reaction } = { x: 0, z: 0, yaw: 0 };
   private toastId = 0;
   private toastMsg = "";
   private beacon: THREE.Group;
@@ -222,6 +222,12 @@ export class Game {
     r.targetYaw = p.yaw;
     r.moving = p.m;
     if (!r.seen) { r.seen = true; r.blob.g.visible = true; r.blob.g.position.set(p.x, 0, p.z); r.blob.yaw = p.yaw; }
+    // 3초마다 같은 값이 다시 와도 바뀔 때만 재시작한다. 리액션 끝은 보낸 쪽이 알려 준다.
+    // 합장 중에는 r이 오지 않으므로, r이 왔다면 보낸 쪽은 이미 합장을 끝낸 것이다
+    const b = r.blob, kind = isReaction(p.r) ? p.r : null;
+    if (kind) {
+      if (b.state !== kind) { b.state = kind; b.stateT = 0; }
+    } else if (isReaction(b.state)) b.state = "idle";
   }
 
   private onRemotePray(id: string, tower: string) {
@@ -305,6 +311,15 @@ export class Game {
     this.toast(`카메라: ${CAMS[this.camMode]}`);
   }
   toast(msg: string) { this.toastMsg = msg; this.toastId++; }
+
+  react(kind: Reaction) {
+    if (this.inputLocked) return;
+    if (this.myHeld) { this.toast("돌을 내려놓고 할 수 있어요"); return; }
+    const s = this.me.state;
+    if (this.busy || s === "pickup" || s === "place" || s === "pray") return;
+    this.me.state = kind; this.me.stateT = 0;
+    this.sendPoseNow();
+  }
 
   async action() {
     if (this.busy || this.me.state === "pickup" || this.me.state === "place") return;
@@ -403,12 +418,15 @@ export class Game {
     me.carrying = !!this.myHeld;
     if ((me.state === "pickup" || me.state === "place") && me.stateT > 0.5) me.state = "idle";
     if (me.state === "pray" && me.stateT > 2) me.state = "idle";
+    if (isReaction(me.state) && me.stateT >= REACTION_SECONDS[me.state]) me.state = "idle";
     let ix = (k.KeyD || k.ArrowRight ? 1 : 0) - (k.KeyA || k.ArrowLeft ? 1 : 0) + this.joy.x;
     let iz = (k.KeyS || k.ArrowDown ? 1 : 0) - (k.KeyW || k.ArrowUp ? 1 : 0) + this.joy.y;
     const il = Math.hypot(ix, iz);
     if (il > 1) { ix /= il; iz /= il; }
     let moving = false;
-    if (!this.inputLocked && il > 0.05 && me.state === "idle") {
+    const wantsMove = !this.inputLocked && il > 0.05;
+    if (wantsMove && isReaction(me.state)) me.state = "idle";
+    if (wantsMove && me.state === "idle") {
       const fwd = new THREE.Vector3();
       this.camera.getWorldDirection(fwd);
       fwd.y = 0;
@@ -536,7 +554,8 @@ export class Game {
   }
 
   private updateCamera(dt: number) {
-    const p = this.me.g.position;
+    const p = this.me.g.position.clone();
+    if (isReaction(this.me.state)) p.y = this.me.baseY; // 앉거나 뛰어도 카메라는 지면 높이를 본다
     const want = this.camMode === 0
       ? new THREE.Vector3(
           Math.sin(this.orbitYaw) * this.orbitDist * Math.cos(this.orbitPitch),
@@ -553,9 +572,9 @@ export class Game {
   }
 
   private sendPoseNow() {
-    const p = this.me.g.position;
-    this.net.sendPose({ x: round2(p.x), z: round2(p.z), yaw: round2(this.me.yaw), m: this.movingNow });
-    this.lastSent = { x: p.x, z: p.z, yaw: this.me.yaw };
+    const p = this.me.g.position, r = isReaction(this.me.state) ? this.me.state : undefined;
+    this.net.sendPose({ x: round2(p.x), z: round2(p.z), yaw: round2(this.me.yaw), m: this.movingNow, ...(r && { r }) });
+    this.lastSent = { x: p.x, z: p.z, yaw: this.me.yaw, r };
     this.poseT = 0;
     this.keepT = 0;
   }
@@ -569,7 +588,9 @@ export class Game {
     const p = this.me.g.position, s = this.lastSent;
     const changed = Math.abs(p.x - s.x) + Math.abs(p.z - s.z) > 0.02 || Math.abs(this.me.yaw - s.yaw) > 0.05;
     const stopped = this.wasMoving && !this.movingNow;
-    if ((changed && this.poseT >= 0.125) || stopped || this.keepT >= 3) this.sendPoseNow();
+    // 리액션이 시간이 다 되거나 이동·줍기·합장으로 끝난 순간도 바로 알린다
+    const reactionChanged = (isReaction(this.me.state) ? this.me.state : undefined) !== s.r;
+    if ((changed && this.poseT >= 0.125) || stopped || reactionChanged || this.keepT >= 3) this.sendPoseNow();
     this.wasMoving = this.movingNow;
   }
 
@@ -644,6 +665,8 @@ export class Game {
 }
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
+// 네트워크 입력도 거치므로 unknown을 받는다
+const isReaction = (v: unknown): v is Reaction => (REACTIONS as readonly unknown[]).includes(v);
 
 function stepOnLand(p: THREE.Vector3, dir: THREE.Vector3, dist: number) {
   const tryMove = (dx: number, dz: number) => {

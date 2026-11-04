@@ -20,6 +20,13 @@ const ACTIONS = {
   pray: { icon: PrayIcon, key: "Q" },
 };
 
+const REACTION_BUTTONS = [
+  { kind: "rest", emoji: "😌", label: "쉬기" },
+  { kind: "wave", emoji: "👋", label: "인사" },
+  { kind: "joy", emoji: "😆", label: "기쁨" },
+  { kind: "sad", emoji: "😢", label: "슬픔" },
+] as const;
+
 function Scene({ onGame, db, me, font }: { onGame(g: Game | null): void; db: SupabaseClient; me: CharacterRow; font: string }) {
   const { scene, camera, gl } = useThree();
   const game = useRef<Game | null>(null);
@@ -193,6 +200,13 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
 
       <div className={`toast ${toastOn ? "on" : ""}`} role="status">{hud.toast}</div>
 
+      <div className="hud reactions">
+        {REACTION_BUTTONS.map(({ kind, emoji, label }) => (
+          // 마우스로 눌러도 포커스를 가져가지 않는다. 포커스가 남으면 스페이스(줍기)를 꾹 눌렀을 때 버튼도 눌린다
+          <button key={kind} type="button" className="chip react" disabled={wishOpen} onMouseDown={(e) => e.preventDefault()} onClick={() => game?.react(kind)} aria-label={label} title={label}><span aria-hidden="true">{emoji}</span></button>
+        ))}
+      </div>
+
       <button type="button" className="chip help-btn" onClick={() => setHelpOpen(true)} aria-label="조작 방법 보기">?</button>
 
       {helpOpen && (
@@ -210,6 +224,7 @@ export function GameView({ db, me, font, onResculpt }: { db: SupabaseClient; me:
               <div><dt><PrayIcon /><kbd className="only-key">Q</kbd></dt><dd>기도. 탑 옆에서 하면 수명이 1시간 늘어납니다</dd></div>
               <div><dt><WishIcon /><kbd className="only-key">F</kbd></dt><dd>내 탑이 {WISH_AT}단이 되면 소원 적기</dd></div>
               <div><dt><CameraIcon /><kbd className="only-key">C</kbd></dt><dd>뷰 전환</dd></div>
+              <div><dt><span aria-hidden="true">😌👋😆😢</span></dt><dd>쉬기, 인사, 기쁨, 슬픔. 움직이면 끝나고, 돌을 들고는 할 수 없습니다</dd></div>
               <div><dt><SculptIcon /></dt><dd>캐릭터 다시 빚기</dd></div>
             </dl>
           </div>
