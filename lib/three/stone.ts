@@ -51,3 +51,115 @@ export function makeStoneMesh(seed: number, radius: number, height: number) {
   mesh.rotation.y = rng(seed)() * Math.PI * 2;
   return mesh;
 }
+
+// 줍기 대상 돌의 은빛 표시: 바닥의 둥근 빛, 옅은 수직 빛줄기, 작은 입자 몇 개.
+// 실제 조명을 쓰지 않아 주변 돌과 땅의 밝기는 그대로다
+const SILVER = "vec3(0.88, 0.92, 0.98)";
+const SPARKS = 6;
+
+export function makePickGlow() {
+  const uniforms = { uK: { value: 0 }, uTime: { value: 0 }, uPx: { value: 1000 } };
+  const group = new THREE.Group();
+  group.visible = false;
+  const common = { uniforms, transparent: true, depthWrite: false, fog: false };
+
+  const disc = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2),
+    new THREE.ShaderMaterial({
+      ...common,
+      vertexShader: `
+        varying vec2 vP;
+        void main() {
+          vP = position.xz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform float uK;
+        varying vec2 vP;
+        void main() {
+          float fall = 1.0 - clamp(length(vP), 0.0, 1.0);
+          gl_FragColor = vec4(${SILVER}, pow(fall, 1.3) * 0.72 * uK);
+        }`,
+    }),
+  );
+  disc.position.y = 0.03; // 땅에 파묻히지 않게 살짝 띄운다
+
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.62, 0.62, 1, 24, 1, true).translate(0, 0.5, 0),
+    new THREE.ShaderMaterial({
+      ...common,
+      vertexShader: `
+        varying float vH;
+        varying vec3 vN;
+        varying vec3 vWorld;
+        void main() {
+          vH = position.y;
+          vN = normalize(mat3(modelMatrix) * normal);
+          vec4 world = modelMatrix * vec4(position, 1.0);
+          vWorld = world.xyz;
+          gl_Position = projectionMatrix * viewMatrix * world;
+        }`,
+      fragmentShader: `
+        uniform float uK;
+        varying float vH;
+        varying vec3 vN;
+        varying vec3 vWorld;
+        void main() {
+          // 위로 갈수록, 기둥의 양옆으로 갈수록 사라진다
+          float facing = abs(dot(normalize(vN), normalize(cameraPosition - vWorld)));
+          float up = pow(1.0 - vH, 2.2);
+          gl_FragColor = vec4(${SILVER}, up * facing * facing * 0.28 * uK);
+        }`,
+    }),
+  );
+
+  // 입자는 시간으로만 계산한다. 위치 배열을 프레임마다 고치지 않는다
+  const seeds = new Float32Array(SPARKS * 3);
+  for (let i = 0; i < SPARKS; i++) {
+    seeds[i * 3] = i * 2.399963; // 황금각으로 둘레에 고르게 놓는다
+    seeds[i * 3 + 1] = 0.25 + ((i * 0.37) % 0.4);
+    seeds[i * 3 + 2] = i / SPARKS;
+  }
+  const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(SPARKS * 3), 3));
+  sparkGeo.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 3));
+  const sparks = new THREE.Points(
+    sparkGeo,
+    new THREE.ShaderMaterial({
+      ...common,
+      vertexShader: `
+        uniform float uTime;
+        uniform float uPx;
+        attribute vec3 aSeed;
+        varying float vA;
+        void main() {
+          float t = fract(uTime * 0.2 + aSeed.z);
+          float a = aSeed.x + t * 0.8;
+          vec3 p = vec3(cos(a) * aSeed.y, 0.08 + t * 1.05, sin(a) * aSeed.y);
+          vA = sin(t * 3.14159);
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_Position = projectionMatrix * mv;
+          gl_PointSize = uPx * projectionMatrix[1][1] * 0.022 / -mv.z; // 월드 크기 약 4.4cm
+        }`,
+      fragmentShader: `
+        uniform float uK;
+        varying float vA;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          gl_FragColor = vec4(${SILVER}, smoothstep(0.5, 0.1, d) * vA * 0.75 * uK);
+        }`,
+    }),
+  );
+  sparks.frustumCulled = false;
+  const size = new THREE.Vector2();
+  sparks.onBeforeRender = (renderer) => { uniforms.uPx.value = renderer.getDrawingBufferSize(size).y; };
+
+  group.add(disc, beam, sparks);
+  return {
+    group,
+    uniforms,
+    dispose() {
+      for (const o of [disc, beam, sparks]) { o.geometry.dispose(); o.material.dispose(); }
+    },
+  };
+}

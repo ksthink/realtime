@@ -6,7 +6,7 @@ import { playDrop, playPick, playStep, setWaterDistance, stopSound, stopStep } f
 import { WORLD, clamp, isWater, lerp, terrainY, waterDistance } from "./terrain";
 import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
-import { makeStoneMesh } from "./three/stone";
+import { makePickGlow, makeStoneMesh } from "./three/stone";
 import { buildWorld } from "./three/world";
 
 // 소원을 빌 수 있게 된 순간(ready)과 최대 층에 닿은 순간(max)에 한 번씩 묻는다
@@ -32,6 +32,8 @@ const CAMS = ["따라가기", "하늘에서"];
 const SUN_OFF = new THREE.Vector3(8, 14, 6);
 const UP = new THREE.Vector3(0, 1, 0);
 const LABEL_RANGE = 10; // 남의 탑 푯말은 이 거리 안에서만 보인다. 내 탑은 항상 보인다
+const PICK_SWITCH_GAIN = 0.15; // 다른 돌이 이만큼(미터) 더 가까워야 대상을 바꾼다. 거리가 비슷한 돌 사이에서 깜빡이지 않게 한다
+const GLOW_FADE = 0.12; // 대상 표시가 사라지거나 나타나는 시간(초)
 const TOUCH_QUERY = "(hover: none), (pointer: coarse)"; // globals.css의 모바일 조건과 같다
 
 // 다시 빚기를 취소하고 돌아올 자리
@@ -71,6 +73,10 @@ export class Game {
   private wishPrompt: WishPrompt | null = null;
   private firstStoneAsk = false;
   private ray = new THREE.Raycaster();
+  private pickTarget: StoneView | null = null;
+  private glow = makePickGlow();
+  private glowOn: StoneView | null = null;
+  private glowK = 0;
   private waterT = 0;
   private lastContact = 0;
 
@@ -103,6 +109,8 @@ export class Game {
       this.me.yaw = start.yaw;
     }
     this.me.baseY = terrainY(this.me.g.position.x, this.me.g.position.z);
+
+    this.root.add(this.glow.group);
 
     this.beacon = makeBeacon();
     this.beacon.visible = false;
@@ -281,25 +289,47 @@ export class Game {
     for (const v of this.stones.values()) if (v.row.tower_id === id && v.row.state === "stacked" && !v.dying) n++;
     return n;
   }
-  private nearestGround(rad: number) {
-    let best: StoneView | null = null, bd = rad;
-    const p = this.me.g.position;
-    for (const v of this.stones.values()) {
-      if (v.row.state !== "ground" || v.dying) continue;
+  // 줍기 대상: 범위 안에서 가장 가까운 바닥 돌, 또는 돌이 하나뿐인 내 탑의 첫 돌. 빛나는 돌과 주워지는 돌은 항상 이 돌이다
+  private refreshPickTarget() {
+    if (this.myHeld) { this.pickTarget = null; return; }
+    const p = this.me.g.position, mineId = this.myTower?.row.id, cur = this.pickTarget;
+    let best: StoneView | null = null, bestD: number = PICK_RANGE, curD = Infinity;
+    const consider = (v: StoneView) => {
       const d = Math.hypot(v.row.x - p.x, v.row.z - p.z);
-      if (d < bd) { bd = d; best = v; }
+      if (v === cur) curD = d;
+      if (d < bestD) { bestD = d; best = v; }
+    };
+    let first: StoneView | null = null, ownCount = 0;
+    for (const v of this.stones.values()) {
+      if (v.dying) continue;
+      if (v.row.state === "ground") consider(v);
+      else if (v.row.state === "stacked" && v.row.tower_id === mineId) { first = v; ownCount++; }
     }
-    return best;
+    if (first && ownCount === 1) consider(first);
+    this.pickTarget = curD < PICK_RANGE && curD - PICK_SWITCH_GAIN < bestD ? cur : best;
   }
-  // 돌이 하나뿐인 내 탑의 첫 돌이 바닥 돌보다 가까이 있는가. 첫 돌은 이때만 다시 고를 수 있다
-  private get firstStoneNear() {
-    const mine = this.myTower;
-    if (!mine) return false;
-    const own = [...this.stones.values()].filter((v) => v.row.state === "stacked" && v.row.tower_id === mine.row.id && !v.dying);
-    if (own.length !== 1) return false;
-    const p = this.me.g.position;
-    const d = Math.hypot(own[0].row.x - p.x, own[0].row.z - p.z);
-    return d < PICK_RANGE && !this.nearestGround(d);
+
+  private updateGlow(dt: number) {
+    const s = this.me.state;
+    const want = this.inputLocked || s === "pickup" || s === "place" ? null : this.pickTarget;
+    if (this.glowOn !== want) {
+      this.glowK -= dt / GLOW_FADE;
+      if (this.glowK <= 0) {
+        this.glowK = 0;
+        this.glowOn = want;
+      }
+    } else if (want) this.glowK = Math.min(1, this.glowK + dt / GLOW_FADE);
+
+    const { group, uniforms } = this.glow;
+    group.visible = !!this.glowOn;
+    uniforms.uK.value = this.glowK;
+    uniforms.uTime.value += dt;
+    if (this.glowOn) {
+      const { x, z } = this.glowOn.mesh.position;
+      group.position.set(x, terrainY(x, z), z);
+      const k = 0.2 + this.glowOn.row.radius * 1.5; // 돌 크기에 맞춘다. 높이는 그대로 둔다
+      group.scale.set(k, 1, k);
+    }
   }
   private nearestTower(rad: number) {
     let best: TowerView | null = null, bd = rad;
@@ -381,13 +411,14 @@ export class Game {
   }
 
   private async pick() {
-    if (this.firstStoneNear) {
+    this.refreshPickTarget();
+    const s = this.pickTarget;
+    if (s?.row.state === "stacked") {
       this.firstStoneAsk = true;
       this.inputLocked = true;
       this.releaseKeys();
       return;
     }
-    const s = this.nearestGround(PICK_RANGE);
     if (!s) { this.toast("가까운 돌이 없어요"); return; }
     const p = this.me.g.position;
     this.me.yaw = Math.atan2(s.row.x - p.x, s.row.z - p.z);
@@ -483,6 +514,8 @@ export class Game {
     this.updatePlayer(dt);
     this.updateRemotes(dt);
     this.updateStones(dt);
+    this.refreshPickTarget();
+    this.updateGlow(dt);
     this.updateTowers();
     this.updateFloaters(dt);
     this.updateCamera(dt);
@@ -719,8 +752,8 @@ export class Game {
     const mine = this.myTower;
     const kind = this.dropKind();
     const near = this.nearestTower(PRAY_RANGE);
-    const redoFirst = !kind && this.firstStoneNear;
-    const stone = !kind && this.nearestGround(PICK_RANGE);
+    const redoFirst = !kind && this.pickTarget?.row.state === "stacked";
+    const stone = !kind && this.pickTarget?.row.state === "ground";
     const prompt =
       kind === "first" ? "여기에 첫돌 놓기 (E)"
       : kind === "stack" ? "내 탑에 쌓기 (E)"
@@ -755,6 +788,7 @@ export class Game {
     };
   }
   debugTeleport(x: number, z: number) {
+    this.pickTarget = null;
     this.me.g.position.set(x, 0, z);
   }
 
@@ -765,6 +799,7 @@ export class Game {
 
   dispose() {
     stopSound();
+    this.glow.dispose();
     this.net.stop();
     this.scene.remove(this.root);
   }
