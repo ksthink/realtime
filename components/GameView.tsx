@@ -8,7 +8,7 @@ import { Game, type HudState, type PlayerSpot } from "@/lib/game";
 import { type CharacterRow, Net } from "@/lib/net";
 import { WISH_AT, WISH_MAX } from "@/lib/rules";
 import { soundDebug, startSound } from "@/lib/sound";
-import { CameraIcon, ClockIcon, CloseIcon, DiscardIcon, DragIcon, FirstStoneIcon, PersonIcon, PickIcon, PrayIcon, SculptIcon, StackIcon, TowerIcon, WishIcon } from "./Icons";
+import { CameraIcon, ClockIcon, CloseIcon, DiscardIcon, DragIcon, FirstStoneIcon, JoyIcon, PersonIcon, PickIcon, PrayIcon, RestIcon, SadIcon, SculptIcon, StackIcon, TowerIcon, WaveIcon, WishIcon } from "./Icons";
 
 const TOAST_MS = 5000;
 
@@ -22,10 +22,10 @@ const ACTIONS = {
 };
 
 const REACTION_BUTTONS = [
-  { kind: "rest", emoji: "😌", label: "쉬기" },
-  { kind: "wave", emoji: "👋", label: "인사" },
-  { kind: "joy", emoji: "😆", label: "기쁨" },
-  { kind: "sad", emoji: "😢", label: "슬픔" },
+  { kind: "rest", icon: RestIcon, label: "쉬기" },
+  { kind: "wave", icon: WaveIcon, label: "인사" },
+  { kind: "joy", icon: JoyIcon, label: "기쁨" },
+  { kind: "sad", icon: SadIcon, label: "슬픔" },
 ] as const;
 
 function Scene({ onGame, db, me, font, start }: { onGame(g: Game | null): void; db: SupabaseClient; me: CharacterRow; font: string; start?: PlayerSpot }) {
@@ -203,9 +203,9 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
       <div className={`toast ${toastOn ? "on" : ""}`} role="status">{hud.toast}</div>
 
       <div className="hud reactions">
-        {REACTION_BUTTONS.map(({ kind, emoji, label }) => (
+        {REACTION_BUTTONS.map(({ kind, icon: Icon, label }) => (
           // 마우스로 눌러도 포커스를 가져가지 않는다. 포커스가 남으면 스페이스(줍기)를 꾹 눌렀을 때 버튼도 눌린다
-          <button key={kind} type="button" className="chip react" disabled={wishOpen} onMouseDown={(e) => e.preventDefault()} onClick={() => game?.react(kind)} aria-label={label} title={label}><span aria-hidden="true">{emoji}</span></button>
+          <button key={kind} type="button" className="chip react" disabled={wishOpen} onMouseDown={(e) => e.preventDefault()} onClick={() => game?.react(kind)} aria-label={label} title={label}><Icon /></button>
         ))}
       </div>
 
