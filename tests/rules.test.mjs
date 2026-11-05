@@ -144,6 +144,31 @@ test("합장: 기본 하루에 +1시간, 같은 탑은 10분에 한 번, 다른 
   clean(a);
 });
 
+test("첫 돌만 있으면 무를 수 있고, 돌은 그 자리에 남으며, 두 번째 돌부터는 무를 수 없다", async () => {
+  const p = await player("무르기");
+  assert.equal(await rpc(p, "release_first_stone"), false); // 탑이 없으면 실패
+
+  const a = stone(0.3);
+  const { tower_id: t } = await carryAndDrop(p, a, 72, 15);
+  const [x, z] = sql(`select x, z from stones where id='${a}'`).split("|");
+  assert.equal(await rpc(p, "release_first_stone"), true);
+  assert.equal(sql(`select count(*) from towers where id='${t}'`), "0");
+  assert.deepEqual(row(a), "ground|f|t");
+  assert.deepEqual(sql(`select x, z from stones where id='${a}'`).split("|"), [x, z]);
+
+  // 다시 첫 돌을 놓아 새 탑을 시작한다
+  const again = await carryAndDrop(p, stone(0.35), 72, 15);
+  assert.equal(again.result, "first");
+  assert.notEqual(again.tower_id, t);
+
+  // 두 번째 돌을 올리면 더는 무를 수 없다
+  assert.equal((await carryAndDrop(p, stone(0.3), 72.5, 15)).result, "stacked");
+  assert.equal(await rpc(p, "release_first_stone"), false);
+  assert.equal(sql(`select count(*) from towers where id='${again.tower_id}'`), "1");
+
+  clean(p);
+});
+
 test("소원을 빌면 소유권이 사라지고, 이름과 소원은 남으며, 곧바로 새 탑을 시작할 수 있다", async () => {
   const p = await player("떠남");
   const other = await player("합장객");

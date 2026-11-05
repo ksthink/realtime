@@ -79,7 +79,7 @@ function Scene({ onGame, db, me, font, start }: { onGame(g: Game | null): void; 
 }
 
 const EMPTY: HudState = {
-  online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myLife: "", wishPrompt: null, carrying: false,
+  online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myLife: "", wishPrompt: null, firstStoneAsk: false, carrying: false,
   prompt: "", action: null, dropKind: null, canPray: false, prayWait: 0, canWish: false, cam: "따라가기", toastId: 0, toast: "",
 };
 
@@ -96,7 +96,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   const wishAskRef = useRef<HTMLDivElement>(null);
 
   // 버튼이 아니라 창에 포커스를 준다. 돌을 놓느라 누른 스페이스가 뗄 때 버튼을 눌러 버리지 않게 한다
-  useEffect(() => { if (hud.wishPrompt) wishAskRef.current?.focus(); }, [hud.wishPrompt]);
+  useEffect(() => { if (hud.wishPrompt || hud.firstStoneAsk) wishAskRef.current?.focus(); }, [hud.wishPrompt, hud.firstStoneAsk]);
 
   // HUD 폴링: 프레임마다 React를 돌리지 않는다
   useEffect(() => {
@@ -137,6 +137,11 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
     setHud(game.hud());
     if (wishNow) showWishForm(game);
   };
+  const answerFirstStone = (release: boolean) => {
+    if (!game) return;
+    void game.answerFirstStone(release);
+    setHud(game.hud());
+  };
   const submitWish = async (e: FormEvent) => {
     e.preventDefault();
     const text = wish.trim();
@@ -149,7 +154,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   useEffect(() => {
     if (!game) return;
     const down = (e: KeyboardEvent) => {
-      if (e.repeat || wishOpen || game.wishPromptOpen || (e.target as HTMLElement)?.tagName === "INPUT") return;
+      if (e.repeat || wishOpen || game.askOpen || (e.target as HTMLElement)?.tagName === "INPUT") return;
       game.setKey(e.code, true);
       if (e.code === "KeyE" || e.code === "Space") { e.preventDefault(); void game.action(); }
       if (e.code === "KeyQ") void game.prayAction();
@@ -263,6 +268,18 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
               ) : (
                 <button type="button" className="go" onClick={() => answerWishPrompt(true)}>확인</button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hud.firstStoneAsk && (
+        <div className="help-back">
+          <div className="wish" ref={wishAskRef} tabIndex={-1} role="alertdialog" aria-modal="true" aria-describedby="first-ask">
+            <p id="first-ask" className="ask">첫 돌을 다시 쌓으실 건가요</p>
+            <div className="row">
+              <button type="button" className="go" onClick={() => answerFirstStone(true)}>네</button>
+              <button type="button" onClick={() => answerFirstStone(false)}>아니요</button>
             </div>
           </div>
         </div>

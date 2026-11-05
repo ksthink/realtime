@@ -118,6 +118,11 @@ export class Net {
     if (error) console.warn("set_wish", error.message);
     return data === true;
   }
+  async releaseFirstStone() {
+    const { data, error } = await this.db.rpc("release_first_stone");
+    if (error) console.warn("release_first_stone", error.message);
+    return data === true;
+  }
   async character(id: string) {
     const { data } = await this.db.from("characters").select("user_id,name,seed,top_color,bottom_color,body").eq("user_id", id).maybeSingle();
     return data as CharacterRow | null;

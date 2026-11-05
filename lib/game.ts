@@ -14,7 +14,7 @@ export type WishPrompt = "ready" | "max";
 
 export type HudState = {
   online: boolean; people: number; towers: number;
-  myStones: number; myMinutes: number | null; myLife: string; wishPrompt: WishPrompt | null;
+  myStones: number; myMinutes: number | null; myLife: string; wishPrompt: WishPrompt | null; firstStoneAsk: boolean;
   carrying: boolean; prompt: string; action: "first" | "stack" | "discard" | "blocked" | "pick" | "pray" | null; dropKind: "first" | "stack" | "discard" | "blocked" | null;
   canPray: boolean; prayWait: number; canWish: boolean; cam: string; toastId: number; toast: string;
 };
@@ -69,6 +69,7 @@ export class Game {
   private ringFor: string | null = null;
   inputLocked = false;
   private wishPrompt: WishPrompt | null = null;
+  private firstStoneAsk = false;
   private waterT = 0;
   private lastContact = 0;
 
@@ -289,6 +290,16 @@ export class Game {
     }
     return best;
   }
+  // 돌이 하나뿐인 내 탑의 첫 돌이 바닥 돌보다 가까이 있는가. 첫 돌은 이때만 다시 고를 수 있다
+  private get firstStoneNear() {
+    const mine = this.myTower;
+    if (!mine) return false;
+    const own = [...this.stones.values()].filter((v) => v.row.state === "stacked" && v.row.tower_id === mine.row.id && !v.dying);
+    if (own.length !== 1) return false;
+    const p = this.me.g.position;
+    const d = Math.hypot(own[0].row.x - p.x, own[0].row.z - p.z);
+    return d < PICK_RANGE && !this.nearestGround(d);
+  }
   private nearestTower(rad: number) {
     let best: TowerView | null = null, bd = rad;
     const p = this.me.g.position;
@@ -356,6 +367,12 @@ export class Game {
   }
 
   private async pick() {
+    if (this.firstStoneNear) {
+      this.firstStoneAsk = true;
+      this.inputLocked = true;
+      this.releaseKeys();
+      return;
+    }
     const s = this.nearestGround(PICK_RANGE);
     if (!s) { this.toast("가까운 돌이 없어요"); return; }
     const p = this.me.g.position;
@@ -425,10 +442,19 @@ export class Game {
     const t = this.myTower;
     return !!t && this.towerStoneCount(t.row.id) >= WISH_AT;
   }
-  get wishPromptOpen() { return !!this.wishPrompt; }
+  get askOpen() { return !!this.wishPrompt || this.firstStoneAsk; }
   closeWishPrompt() {
     this.wishPrompt = null;
     this.inputLocked = false;
+  }
+  // [네]: 탑을 없애고 돌은 그 자리에 남긴다. [아니요]: 그대로 이어서 쌓는다
+  async answerFirstStone(release: boolean) {
+    this.firstStoneAsk = false;
+    this.inputLocked = false;
+    if (!release) return;
+    const ok = await this.net.releaseFirstStone();
+    if (ok) await this.net.resync();
+    this.toast(ok ? "첫 돌을 내려놓았어요. 새 첫 돌을 찾아보세요" : "첫 돌을 바꾸지 못했어요");
   }
   // 소원을 빌면 탑은 내 손을 떠난다. 실시간 이벤트를 기다리지 않고 바로 반영해 새 탑을 시작할 수 있게 한다
   async makeWish(text: string) {
@@ -679,22 +705,24 @@ export class Game {
     const mine = this.myTower;
     const kind = this.dropKind();
     const near = this.nearestTower(PRAY_RANGE);
+    const redoFirst = !kind && this.firstStoneNear;
     const stone = !kind && this.nearestGround(PICK_RANGE);
     const prompt =
       kind === "first" ? "여기에 첫돌 놓기 (E)"
       : kind === "stack" ? "내 탑에 쌓기 (E)"
       : kind === "discard" ? "여기서 놓으면 버려져요 (E)"
       : kind === "blocked" ? "다른 탑과 너무 가까워요 (E)"
+      : redoFirst ? "첫 돌 다시 들기 (E)"
       : stone ? "돌 줍기 (E)"
       : near ? `${this.towerName(near.row)}에 합장하기 (Q)`
       : "";
-    const action = kind ?? (stone ? "pick" : near ? "pray" : null);
+    const action = kind ?? (redoFirst || stone ? "pick" : near ? "pray" : null);
     return {
       online: this.online, people: this.people, towers: this.towers.size,
       myStones: mine ? this.towerStoneCount(mine.row.id) : 0,
       myMinutes: mine ? Math.ceil((Date.parse(mine.row.expires_at) - Date.now()) / 60000) : null,
       myLife: mine ? formatLife(Date.parse(mine.row.expires_at) - Date.now()) : "",
-      wishPrompt: this.wishPrompt,
+      wishPrompt: this.wishPrompt, firstStoneAsk: this.firstStoneAsk,
       carrying: !!this.myHeld, prompt, action, dropKind: kind,
       canPray: !!near, prayWait: near ? Math.ceil(this.prayWait(near.row.id) / 60000) : 0,
       canWish: this.canWishHere, cam: CAMS[this.camMode],
