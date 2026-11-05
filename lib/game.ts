@@ -29,6 +29,7 @@ const CAMS = ["따라가기", "하늘에서"];
 const SUN_OFF = new THREE.Vector3(8, 14, 6);
 const UP = new THREE.Vector3(0, 1, 0);
 const LABEL_RANGE = 10; // 남의 탑 푯말은 이 거리 안에서만 보인다. 내 탑은 항상 보인다
+const TOUCH_QUERY = "(hover: none), (pointer: coarse)"; // globals.css의 모바일 조건과 같다
 
 // 다시 빚기를 취소하고 돌아올 자리
 export type PlayerSpot = { x: number; z: number; yaw: number };
@@ -192,6 +193,8 @@ export class Game {
     let t = this.towers.get(row.id);
     if (!t) {
       const label = new TowerLabel(this.font);
+      // 휴대폰에서는 남의 탑 푯말이 화면을 많이 가려서 절반 크기로 줄인다
+      if (row.owner_id !== this.net.uid && matchMedia(TOUCH_QUERY).matches) label.sprite.scale.multiplyScalar(0.5);
       this.root.add(label.sprite);
       t = { row, label, top: terrainY(row.x, row.z) };
       this.towers.set(row.id, t);

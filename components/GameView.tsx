@@ -152,11 +152,11 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   const joyMove = (e: React.PointerEvent) => {
     if (!game || !stickRef.current) return;
     const rc = stickRef.current.getBoundingClientRect();
-    let x = (e.clientX - rc.left - 60) / 45, y = (e.clientY - rc.top - 60) / 45;
+    let x = (e.clientX - rc.left - 72) / 54, y = (e.clientY - rc.top - 72) / 54;
     const l = Math.hypot(x, y);
     if (l > 1) { x /= l; y /= l; }
     game.joy = { x, y };
-    if (knobRef.current) knobRef.current.style.transform = `translate(${x * 40}px,${y * 40}px)`;
+    if (knobRef.current) knobRef.current.style.transform = `translate(${x * 48}px,${y * 48}px)`;
   };
   const joyEnd = () => {
     if (game) game.joy = { x: 0, y: 0 };
