@@ -3,10 +3,14 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { playSquish, stopSquish } from "@/lib/sound";
 import { clamp, rng } from "@/lib/terrain";
 import { colorize, createBodyGeometry, encodeBody, randomPalette, sculptTopology, smoothNormals } from "@/lib/three/blob";
 
 export type SculptResult = { name: string; seed: number; top: string; bottom: string; body: string };
+
+// 드래그 속도(초당 거리). 느리면 소리를 내지 않고, 빠르면 최대 크기로 낸다
+const SQUISH_MIN_SPEED = 0.1, SQUISH_MAX_SPEED = 4;
 
 const SHAPES: Record<string, { label: string; fn: (v: THREE.Vector3) => THREE.Vector3 }> = {
   sphere: { label: "구", fn: (v) => v.multiplyScalar(0.85) },
@@ -126,7 +130,7 @@ function Clay({ apiRef }: { apiRef: React.MutableRefObject<Api | null> }) {
     // 드래그: 몸통 위면 밀고 당기기, 빈 곳이면 돌리기
     const el = gl.domElement;
     const ray = new THREE.Raycaster(), plane = new THREE.Plane(), pt = new THREE.Vector3(), tmp = new THREE.Vector3();
-    let drag: { id: number; mode: "rotate"; x: number; y: number } | { id: number; mode: "deform"; last: THREE.Vector3; center: THREE.Vector3 } | null = null;
+    let drag: { id: number; mode: "rotate"; x: number; y: number } | { id: number; mode: "deform"; last: THREE.Vector3; center: THREE.Vector3; at: number } | null = null;
     const pointer = (e: PointerEvent) => {
       const r = el.getBoundingClientRect();
       return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -138,7 +142,7 @@ function Clay({ apiRef }: { apiRef: React.MutableRefObject<Api | null> }) {
       if (h) {
         plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), h.point);
         const local = mesh.worldToLocal(h.point.clone());
-        drag = { id: e.pointerId, mode: "deform", last: local, center: local.clone() };
+        drag = { id: e.pointerId, mode: "deform", last: local, center: local.clone(), at: e.timeStamp };
       } else drag = { id: e.pointerId, mode: "rotate", x: e.clientX, y: e.clientY };
       draggingRef.current = true;
     };
@@ -154,6 +158,9 @@ function Clay({ apiRef }: { apiRef: React.MutableRefObject<Api | null> }) {
       if (!ray.ray.intersectPlane(plane, pt)) return;
       const now = mesh.worldToLocal(pt.clone()), d = now.clone().sub(drag.last);
       drag.last.copy(now);
+      const speed = d.length() / Math.max(0.008, (e.timeStamp - drag.at) / 1000);
+      drag.at = e.timeStamp;
+      if (speed > SQUISH_MIN_SPEED) playSquish(Math.min(1, speed / SQUISH_MAX_SPEED));
       if (d.length() > 0.25) d.setLength(0.25);
       const R = 0.9;
       for (let i = 0; i < pos.count; i++) {
@@ -169,7 +176,7 @@ function Clay({ apiRef }: { apiRef: React.MutableRefObject<Api | null> }) {
       refresh();
     };
     const up = (e: PointerEvent) => {
-      if (drag && e.pointerId === drag.id) { drag = null; draggingRef.current = false; }
+      if (drag && e.pointerId === drag.id) { drag = null; draggingRef.current = false; stopSquish(); }
     };
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
@@ -180,6 +187,7 @@ function Clay({ apiRef }: { apiRef: React.MutableRefObject<Api | null> }) {
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);
+      stopSquish();
       apiRef.current = null;
     };
   }, [state, gl, camera, apiRef]);

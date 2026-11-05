@@ -1,8 +1,8 @@
 // 배경음과 효과음. 파일은 public/sound에 있다.
 // 원본 음량 차이가 커서(숲 바람 최대 4%, out 96%) 소리별로 보정한다.
-const LEVEL = { wind: 6, spool: 3, water: 1.5, step: 0.7, in: 3, out: 0.6 };
+const LEVEL = { wind: 6, spool: 3, water: 1.5, step: 0.7, in: 3, out: 0.6, squish: 3 };
 const FILES = {
-  wind: "forest_wind", spool: "forese_spool", water: "water", step: "step", in: "in", out: "out",
+  wind: "forest_wind", spool: "forese_spool", water: "water", step: "step", in: "in", out: "out", squish: "squish",
 } as const;
 type Name = keyof typeof FILES;
 
@@ -16,6 +16,8 @@ const STEP_SLICES = [
   { at: 0.09, gain: 2 },
   { at: 1.55, gain: 1.3 },
 ];
+const SQUISH_IDLE_MS = 80; // 이 시간 동안 움직임이 없으면 멈춘 것으로 본다
+const SQUISH_END_MS = 300; // 소리가 줄어든 뒤 재생을 끝낼 때까지. 그 안에 다시 움직이면 이어서 낸다
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -28,6 +30,9 @@ let waterGain: GainNode | null = null;
 let stepNode: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
 let stepCount = 0, dropCount = 0;
 let spoolTimer: ReturnType<typeof setTimeout> | null = null;
+let squishNode: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
+let squishIdle: ReturnType<typeof setTimeout> | undefined;
+let squishEnd: ReturnType<typeof setTimeout> | undefined;
 
 function load() {
   return (loading ??= Promise.all(
@@ -165,6 +170,44 @@ export function stopStep() {
   stepNode.gain.gain.cancelScheduledValues(ctx.currentTime);
   stepNode.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.03);
   stepNode = null;
+}
+
+// 말랑이를 주무르는 동안 계속 호출한다. speed(0~1)가 빠를수록 크고 조금 높은 소리가 난다.
+// 호출이 끊기면 저절로 줄어든다
+export function playSquish(speed: number) {
+  const buf = buffers.squish;
+  if (!ctx || !master || !buf) return;
+  clearTimeout(squishEnd);
+  if (!squishNode) {
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    gain.connect(master);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.connect(gain);
+    // 매번 다른 지점에서 시작해 같은 소리의 반복으로 들리지 않게 한다
+    src.start(0, Math.random() * buf.duration);
+    squishNode = { src, gain };
+  }
+  const now = ctx.currentTime;
+  squishNode.gain.gain.setTargetAtTime(LEVEL.squish * (0.4 + 0.6 * speed), now, 0.03);
+  squishNode.src.playbackRate.setTargetAtTime(0.9 + 0.3 * speed, now, 0.05);
+  clearTimeout(squishIdle);
+  squishIdle = setTimeout(stopSquish, SQUISH_IDLE_MS);
+}
+
+export function stopSquish() {
+  clearTimeout(squishIdle);
+  clearTimeout(squishEnd);
+  if (!ctx || !squishNode) return;
+  const { src, gain } = squishNode;
+  gain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+  squishEnd = setTimeout(() => {
+    src.stop();
+    gain.disconnect();
+    squishNode = null;
+  }, SQUISH_END_MS);
 }
 
 export const soundDebug = () => ({
