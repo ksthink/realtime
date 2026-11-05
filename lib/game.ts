@@ -70,6 +70,7 @@ export class Game {
   inputLocked = false;
   private wishPrompt: WishPrompt | null = null;
   private firstStoneAsk = false;
+  private ray = new THREE.Raycaster();
   private waterT = 0;
   private lastContact = 0;
 
@@ -206,7 +207,7 @@ export class Game {
     t.row = row;
     // 휴대폰에서는 남의 탑 푯말이 화면을 많이 가려서 절반 크기로 줄인다. 소원을 빌면 내 탑도 남의 탑이 된다
     const k = row.owner_id !== this.net.uid && matchMedia(TOUCH_QUERY).matches ? 0.5 : 1;
-    t.label.sprite.scale.set(3.2 * k, k, 1);
+    t.label.setSize(k);
   }
 
   private removeTower(id: string) {
@@ -344,6 +345,19 @@ export class Game {
     this.toast(`뷰: ${CAMS[this.camMode]}`);
   }
   toast(msg: string) { this.toastMsg = msg; this.toastId++; }
+
+  // 화면 탭(x, y는 -1~1): 보이는 푯말 중 가장 앞의 것을 펼치거나 접는다
+  tapLabel(x: number, y: number) {
+    if (this.inputLocked) return;
+    this.ray.setFromCamera(new THREE.Vector2(x, y), this.camera);
+    let best: TowerLabel | null = null, bestD = Infinity;
+    for (const t of this.towers.values()) {
+      if (!t.label.sprite.visible) continue;
+      const hit = this.ray.intersectObject(t.label.sprite)[0];
+      if (hit?.uv && hit.distance < bestD && t.label.contains(hit.uv)) { best = t.label; bestD = hit.distance; }
+    }
+    best?.toggle();
+  }
 
   react(kind: Reaction) {
     if (this.inputLocked) return;
@@ -589,9 +603,9 @@ export class Game {
       t.label.sprite.visible = mine || dist < LABEL_RANGE;
       t.label.sprite.position.set(t.row.x, t.top + 0.3, t.row.z);
       const left = Date.parse(t.row.expires_at) - now;
-      const name = this.towerName(t.row);
+      const life = left > 0 ? formatLife(left) : "곧 사라져요";
       // 초마다 바뀌므로 보이는 라벨만 다시 그린다
-      if (t.label.sprite.visible) t.label.set(t.row.wish, left > 0 ? `${name} · ${formatLife(left)}` : `${name} · 곧 사라져요`, left < 10 * 60000, mine);
+      if (t.label.sprite.visible) t.label.set(t.row.owner_name, t.row.wish, t.row.wish ? life : `${this.towerName(t.row)} · ${life}`, left < 10 * 60000, mine);
     }
 
     // 내 첫돌 표시: 멀리서도 보이는 빛기둥과, 돌을 들었을 때 쌓이는 범위

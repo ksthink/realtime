@@ -11,6 +11,7 @@ import { soundDebug, startSound } from "@/lib/sound";
 import { CameraIcon, ClockIcon, CloseIcon, DiscardIcon, DragIcon, FirstStoneIcon, JoyIcon, PersonIcon, PickIcon, PrayIcon, RestIcon, SadIcon, SculptIcon, StackIcon, TowerIcon, WaveIcon, WishIcon } from "./Icons";
 
 const TOAST_MS = 5000;
+const TAP_SLOP = 8; // 이만큼(px) 움직이기 전에 손을 떼면 탭으로 본다
 
 const ACTIONS = {
   pick: { icon: PickIcon, key: "E" },
@@ -48,14 +49,22 @@ function Scene({ onGame, db, me, font, start }: { onGame(g: Game | null): void; 
 
     // 빈 곳 드래그로 카메라 회전, 휠로 거리
     const el = gl.domElement;
-    let drag: { id: number; x: number; y: number } | null = null;
-    const down = (e: PointerEvent) => { drag = { id: e.pointerId, x: e.clientX, y: e.clientY }; el.setPointerCapture(e.pointerId); };
+    let drag: { id: number; x: number; y: number; moved: number } | null = null;
+    const down = (e: PointerEvent) => { drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0 }; el.setPointerCapture(e.pointerId); };
     const move = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
+      drag.moved += Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
       g.orbit(e.clientX - drag.x, e.clientY - drag.y);
       drag.x = e.clientX; drag.y = e.clientY;
     };
-    const up = () => { drag = null; };
+    const up = (e: PointerEvent) => {
+      // 거의 움직이지 않고 뗐으면 드래그가 아니라 탭이다
+      if (drag && e.pointerId === drag.id && e.type === "pointerup" && drag.moved < TAP_SLOP) {
+        const r = el.getBoundingClientRect();
+        g.tapLabel(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      }
+      drag = null;
+    };
     const wheel = (e: WheelEvent) => g.zoom(e.deltaY);
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
