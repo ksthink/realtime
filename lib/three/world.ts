@@ -76,13 +76,14 @@ export function buildWorld(root: THREE.Object3D) {
   const geo = new THREE.PlaneGeometry(S * 2, S * 2, SEG, SEG);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color();
-  const grass = new THREE.Color("#b9cf9d"), grass2 = new THREE.Color("#9fbf86"), sand = new THREE.Color("#e3d7b8"), rock = new THREE.Color("#aaa6a8"), snow = new THREE.Color("#f1f0f4");
+  const grass = new THREE.Color("#b9cf9d"), grass2 = new THREE.Color("#9fbf86"), sand = new THREE.Color("#e3d7b8"), lakebed = new THREE.Color("#5e8488"), rock = new THREE.Color("#aaa6a8"), snow = new THREE.Color("#f1f0f4");
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i), y = terrainY(x, z);
     pos.setY(i, y);
     const slope = Math.hypot(terrainY(x + 0.5, z) - terrainY(x - 0.5, z), terrainY(x, z + 0.5) - terrainY(x, z - 0.5));
     c.copy(grass).lerp(grass2, vnoise(x * 0.3, z * 0.3));
     if (y < WATER_Y + 0.6) c.lerp(sand, clamp((WATER_Y + 0.6 - y) / 0.6, 0, 1));
+    if (y < WATER_Y - 0.3) c.lerp(lakebed, clamp((WATER_Y - 0.3 - y) / 1.2, 0, 1)); // 호수 바닥: 물가의 모래를 지나 깊을수록 어둡게
     if (slope > 0.7) c.lerp(rock, clamp((slope - 0.7) / 0.8, 0, 1));
     if (y > 5.5) c.lerp(snow, clamp((y - 5.5) / 2, 0, 1));
     col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
@@ -95,7 +96,7 @@ export function buildWorld(root: THREE.Object3D) {
 
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(S * 2, S * 2),
-    waterMaterial(),
+    waterMaterial(pos, SEG + 1, S, WATER_Y),
   );
   water.rotation.x = -Math.PI / 2;
   water.position.y = WATER_Y;
