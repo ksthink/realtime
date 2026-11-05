@@ -6,6 +6,7 @@ import { playDrop, playPick, playStep, setWaterDistance, stopSound, stopStep } f
 import { WORLD, clamp, isWater, lerp, terrainY, waterDistance } from "./terrain";
 import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
+import { makePetals } from "./three/petals";
 import { makePickGlow, makeStoneMesh } from "./three/stone";
 import { buildWorld } from "./three/world";
 
@@ -75,6 +76,8 @@ export class Game {
   private ray = new THREE.Raycaster();
   private pickTarget: StoneView | null = null;
   private glow = makePickGlow();
+  private petals = makePetals();
+  private world: ReturnType<typeof buildWorld>;
   private glowOn: StoneView | null = null;
   private glowK = 0;
   private waterT = 0;
@@ -99,7 +102,8 @@ export class Game {
     sc.left = sc.bottom = -24; sc.right = sc.top = 24; sc.far = 60;
     this.sun.shadow.bias = -0.0008;
     this.root.add(this.sun, this.sun.target);
-    buildWorld(this.root);
+    this.world = buildWorld(this.root);
+    this.root.add(this.petals.points);
 
     this.me = this.makeAvatar(meRow);
     const a = Math.random() * Math.PI * 2;
@@ -521,6 +525,8 @@ export class Game {
     this.updateCamera(dt);
     this.updatePoseSend(dt);
     const p = this.me.g.position;
+    this.world.update(dt);
+    this.petals.update(dt, p);
     this.sun.position.copy(p).add(SUN_OFF);
     this.sun.target.position.copy(p);
     this.sun.target.updateMatrixWorld();
@@ -800,6 +806,7 @@ export class Game {
   dispose() {
     stopSound();
     this.glow.dispose();
+    this.petals.dispose();
     this.net.stop();
     this.scene.remove(this.root);
   }

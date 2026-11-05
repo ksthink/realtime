@@ -31,9 +31,12 @@ const RIVERS = [
   (x: number) => 11 + 5.5 * Math.sin(x * 0.085) + 2.5 * Math.sin(x * 0.23 + 1.2),
   (x: number) => -34 + 7 * Math.sin(x * 0.06 + 2) + 3 * Math.sin(x * 0.19),
 ];
+// minus·plus: 강 중심에서 z- 쪽, z+ 쪽으로 뻗는 길이. 강 옆 웅덩이나 습지까지 지나 땅에 닿게 한다
 const BRIDGES = [
-  { x: -1, river: 0 }, { x: 22, river: 0 }, { x: -26, river: 0 }, { x: 50, river: 0 },
-  { x: 4, river: 1 }, { x: -40, river: 1 }, { x: 38, river: 1 },
+  { x: -1, river: 0, minus: 6.5, plus: 6.5 }, { x: 22, river: 0, minus: 6.5, plus: 24 },
+  { x: -26, river: 0, minus: 6.5, plus: 6.5 }, { x: 50, river: 0, minus: 6.5, plus: 6.5 },
+  { x: 4, river: 1, minus: 7.5, plus: 19 }, { x: -40, river: 1, minus: 19.5, plus: 7 },
+  { x: 38, river: 1, minus: 11.5, plus: 7.5 },
 ];
 
 export function terrainY(x: number, z: number) {
@@ -44,7 +47,7 @@ export function terrainY(x: number, z: number) {
   const flat = clamp((r - 3) / 6, 0, 1);
   h *= flat * flat * (3 - 2 * flat); // 시작 지점은 평평하게
   if (r > WORLD - 6) h += Math.pow((r - (WORLD - 6)) / 6, 2) * 7; // 가장자리 산
-  for (const b of BRIDGES) if (Math.abs(x - b.x) < 1.6 && Math.abs(dvs[b.river]) < 6.5) h = Math.max(h, WATER_Y + 0.45); // 돌다리
+  for (const b of BRIDGES) if (Math.abs(x - b.x) < 1.6 && dvs[b.river] > -b.minus && dvs[b.river] < b.plus) h = Math.max(h, WATER_Y + 0.45); // 돌다리
   return h;
 }
 export const isWater = (x: number, z: number) => terrainY(x, z) < WATER_Y + 0.12;

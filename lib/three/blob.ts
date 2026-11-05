@@ -127,6 +127,12 @@ export type Reaction = (typeof REACTIONS)[number];
 // 자동 종료까지 걸리는 초. rest는 사용자가 움직일 때까지 계속되므로 Infinity
 export const REACTION_SECONDS: Record<Reaction, number> = { rest: Infinity, wave: 2.4, joy: 1.8, sad: 3 };
 
+// 가만히 서 있을 때 가끔 하는 행동. 여기서 도는 애니메이션이라 다른 접속자에게 전송하지 않는다
+const IDLE_ACTIONS = { swing: 2.4, look: 3.2, stretch: 2.4, sway: 3 }; // 행동별 길이(초)
+type IdleAction = keyof typeof IDLE_ACTIONS;
+const idleKinds = Object.keys(IDLE_ACTIONS) as IdleAction[];
+const nextIdleWait = () => 4 + Math.random() * 6; // 행동 사이의 쉬는 시간(초)
+
 export type Blob = {
   g: THREE.Group; body: THREE.Mesh; mouth: THREE.Mesh;
   legs: THREE.Group[]; arms: THREE.Group[]; prayArms: THREE.Group; coverArms: THREE.Group;
@@ -134,6 +140,7 @@ export type Blob = {
   carrying: boolean; walk: number; bob: number; baseY: number; prayK: number;
   restK: number; waveK: number; joyK: number; sadK: number; joyH: number; sitDrop: number;
   holdPoint: THREE.Vector3;
+  idleWait: number; idleKind: IdleAction; idleOn: boolean; idleT: number; idleK: number; idleArm: 0 | 1;
 };
 
 export type BlobInit = { seed: number; name: string; top: string; bottom: string; body: string };
@@ -301,6 +308,7 @@ export function makeBlob(init: BlobInit, font: string): Blob {
     yaw: 0, state: "idle", stateT: 0, carrying: false, walk: 0, bob: 0, baseY: 0, prayK: 0,
     restK: 0, waveK: 0, joyK: 0, sadK: 0, joyH: 0, sitDrop,
     holdPoint: new THREE.Vector3(0, legLen + H + 0.25, 0.05),
+    idleWait: nextIdleWait(), idleKind: "swing", idleOn: false, idleT: 0, idleK: 0, idleArm: 0,
   };
 }
 
@@ -346,6 +354,39 @@ export function animateBlob(ch: Blob, dt: number, moving: boolean) {
   ch.arms[0].rotation.set(lerp(armX, 0, ch.waveK), 0, -lerp(armZ, 2 + 0.4 * Math.sin(ch.stateT * Math.PI * 2.5), ch.waveK));
   ch.arms[1].rotation.set(armX, 0, armZ);
 
+  // 멍하니 서 있으면 가끔 작은 행동을 한다. 움직이거나 다른 동작을 시작하면 바로 멈춘다
+  if (moving || carry || ch.state !== "idle") {
+    ch.idleOn = false;
+    ch.idleWait = nextIdleWait();
+  } else if (ch.idleOn) {
+    if (ch.idleT >= IDLE_ACTIONS[ch.idleKind]) { ch.idleOn = false; ch.idleWait = nextIdleWait(); }
+  } else if ((ch.idleWait -= dt) <= 0) {
+    ch.idleKind = idleKinds[Math.floor(Math.random() * idleKinds.length)];
+    ch.idleArm = Math.random() < 0.5 ? 0 : 1;
+    ch.idleOn = true;
+    ch.idleT = 0;
+  }
+  ch.idleT += dt;
+  ch.idleK = lerp(ch.idleK, ch.idleOn ? 1 : 0, Math.min(1, dt * 4));
+  const idle = ch.idleK > 0.001 ? ch.idleK : 0, idleT = ch.idleT;
+  let lookY = 0, swayZ = 0, stretchY = 0;
+  if (idle) {
+    if (ch.idleKind === "swing") {
+      const arm = ch.arms[ch.idleArm];
+      arm.rotation.x += idle * Math.sin(idleT * 3.4) * 0.35;
+      arm.rotation.z += idle * (ch.idleArm ? 0.4 : -0.4);
+    } else if (ch.idleKind === "look") {
+      lookY = idle * Math.sin(idleT * 1.9) * 0.24;
+    } else if (ch.idleKind === "sway") {
+      swayZ = idle * Math.sin(idleT * 2.1) * 0.06;
+    } else {
+      const lift = idle * Math.sin((Math.min(idleT, IDLE_ACTIONS.stretch) / IDLE_ACTIONS.stretch) * Math.PI);
+      ch.arms[0].rotation.z -= lift * 0.9;
+      ch.arms[1].rotation.z += lift * 0.9;
+      stretchY = lift * 0.035;
+    }
+  }
+
   // 합장: 손을 가슴 앞에 모으고 살짝 고개를 숙인다
   ch.prayK = lerp(ch.prayK, ch.state === "pray" ? 1 : 0, Math.min(1, dt * 7));
   const praying = ch.prayK > 0.3;
@@ -358,9 +399,10 @@ export function animateBlob(ch: Blob, dt: number, moving: boolean) {
   // 합장(앞으로), 앉기(뒤로), 슬픔(앞으로)을 더한다
   ch.body.rotation.x = 0.14 * ch.prayK - 0.18 * ch.restK + 0.2 * ch.sadK;
   // 3초에 3번 왕복. lerp의 지연으로 실제 진폭은 약 0.36
-  ch.body.rotation.y = lerp(ch.body.rotation.y, ch.state === "sad" ? 0.42 * Math.sin(ch.stateT * Math.PI * 2) : 0, Math.min(1, dt * 10));
+  ch.body.rotation.y = lerp(ch.body.rotation.y, ch.state === "sad" ? 0.42 * Math.sin(ch.stateT * Math.PI * 2) : lookY, Math.min(1, dt * 10));
+  ch.body.rotation.z = swayZ;
 
-  ch.body.scale.y *= 1 - crouch;
+  ch.body.scale.y *= (1 - crouch) * (1 + stretchY);
   ch.g.position.y -= crouch * 0.15;
   // 착지 때 납작하게, 뛸 때 길게
   const stretch = ch.joyK * (0.1 * jump - 0.16 * Math.pow(1 - jump, 4));

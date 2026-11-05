@@ -1,6 +1,40 @@
 import * as THREE from "three";
 import { WATER_Y, WORLD, clamp, rng, terrainY, vnoise } from "../terrain";
+import { WIND_DIR } from "./petals";
 import { stoneGeometry } from "./stone";
+import { tickWater, waterMaterial } from "./water";
+
+// 바람 세기. 값은 최대 흔들림(m)이고, 0이면 그 부위가 멈춘다. RIPPLE은 수관 표면 일렁임(반지름 비율)
+const SWAY_CANOPY = 0.035, SWAY_BUSH = 0.03, SWAY_FLOWER = 0.02, RIPPLE = 0.012;
+
+const f = (v: number) => v.toFixed(4);
+
+// 여러 사인을 겹쳐 규칙적으로 보이지 않게 하고, 위치에 따라 위상을 천천히 바꿔 바람이 번져 가게 한다
+const WIND_GLSL = `
+uniform float uWindTime;
+vec2 windAt(vec2 p) {
+  float gust = 0.65 + 0.35 * sin(uWindTime * 0.21 + p.x * 0.04 + p.y * 0.06);
+  float a = sin(uWindTime * 0.9 + dot(p, vec2(0.31, 0.23)));
+  float b = sin(uWindTime * 1.6 + dot(p, vec2(-0.47, 0.71)));
+  vec2 dir = vec2(${f(WIND_DIR[0])}, ${f(WIND_DIR[1])});
+  return gust * (dir * (0.7 * a + 0.3 * b) + vec2(-dir.y, dir.x) * 0.25 * b);
+}
+`;
+
+// 인스턴스 메시 재질의 정점 셰이더에 바람을 넣는다. body에서 wind(-1~1)로 transformed를 옮긴다
+function sway<M extends THREE.Material>(mat: M, time: { value: number }, key: string, body: string) {
+  mat.customProgramCacheKey = () => `wind-${key}`; // 없으면 소스가 같은 onBeforeCompile끼리 프로그램을 나눠 쓴다
+  mat.onBeforeCompile = (s) => {
+    s.uniforms.uWindTime = time;
+    s.vertexShader = WIND_GLSL + s.vertexShader.replace(
+      "#include <begin_vertex>",
+      `#include <begin_vertex>
+      vec2 wind = windAt(instanceMatrix[3].xz);
+      ${body}`,
+    );
+  };
+  return mat;
+}
 
 type Item = { x: number; y: number; z: number; r: () => number };
 
@@ -33,6 +67,7 @@ function instanced<T extends { x: number; y: number; z: number }>(
   });
   m.castShadow = m.receiveShadow = true;
   root.add(m);
+  return m;
 }
 
 export function buildWorld(root: THREE.Object3D) {
@@ -60,13 +95,19 @@ export function buildWorld(root: THREE.Object3D) {
 
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(S * 2, S * 2),
-    new THREE.MeshStandardMaterial({ color: "#8fb8da", roughness: 0.25, metalness: 0.05, transparent: true, opacity: 0.82 }),
+    waterMaterial(),
   );
   water.rotation.x = -Math.PI / 2;
   water.position.y = WATER_Y;
+  water.onBeforeRender = tickWater;
   root.add(water);
 
   // 식생: 전부 인스턴싱
+  const windTime = { value: 0 };
+  const canopyWind = `
+    transformed.xz += wind * ${f(SWAY_CANOPY)} * (0.75 + 0.25 * position.y);
+    transformed *= 1.0 + ${f(RIPPLE)} * sin(uWindTime * 2.1 + dot(position, vec3(2.3, 3.1, 1.7)) + instanceMatrix[3].x);`;
+  const bushWind = `transformed.xz += wind * ${f(SWAY_BUSH)} * (0.5 + 0.5 * position.y);`; // 밑동은 땅에 붙어 있다
   const onLand = (_x: number, y: number, _z: number, slope: number) => y > WATER_Y + 0.5 && slope < 0.9;
   const trees = scatter(620, 11, 8, WORLD + 3, (x, y, z, s) => onLand(x, y, z, s) && y < 5);
   instanced(root, new THREE.CylinderGeometry(0.1, 0.17, 1, 7), new THREE.MeshStandardMaterial({ roughness: 1 }), trees, (t, o, col) => {
@@ -80,22 +121,25 @@ export function buildWorld(root: THREE.Object3D) {
     const h = 0.9 + t.r() * 0.8, k = 2 + Math.floor(t.r() * 2), hue = 0.25 + t.r() * 0.12, l = 0.5 + t.r() * 0.15;
     for (let i = 0; i < k; i++) canopy.push({ x: t.x + (t.r() - 0.5) * 0.5, y: t.y + h + 0.3 + i * 0.45 * (t.r() + 0.5), z: t.z + (t.r() - 0.5) * 0.5, s: 0.55 + t.r() * 0.5, hue, l });
   }
-  instanced(root, new THREE.SphereGeometry(1, 12, 9), new THREE.MeshStandardMaterial({ roughness: 0.95 }), canopy, (t, o, col) => {
+  // 수관과 덤불은 그림자도 같이 흔든다. 어긋나면 표면이 제 그림자 안으로 들어가 얼룩이 생길 수 있다
+  instanced(root, new THREE.SphereGeometry(1, 12, 9), sway(new THREE.MeshStandardMaterial({ roughness: 0.95 }), windTime, "canopy", canopyWind), canopy, (t, o, col) => {
     o.scale.set(t.s * 1.1, t.s * 0.9, t.s * 1.1);
     col.setHSL(t.hue, 0.45, t.l);
-  });
-  instanced(root, new THREE.SphereGeometry(1, 10, 8), new THREE.MeshStandardMaterial({ roughness: 1 }), scatter(420, 23, 5, WORLD + 1, onLand), (t, o, col) => {
+  }).customDepthMaterial = sway(new THREE.MeshDepthMaterial(), windTime, "canopy", canopyWind);
+  instanced(root, new THREE.SphereGeometry(1, 10, 8), sway(new THREE.MeshStandardMaterial({ roughness: 1 }), windTime, "bush", bushWind), scatter(420, 23, 5, WORLD + 1, onLand), (t, o, col) => {
     const s = 0.35 + t.r() * 0.45;
     o.position.y += s * 0.5;
     o.scale.set(s * 1.3, s * 0.8, s * 1.2);
     col.setHSL(0.28 + t.r() * 0.08, 0.4, 0.5 + t.r() * 0.12);
-  });
+  }).customDepthMaterial = sway(new THREE.MeshDepthMaterial(), windTime, "bush", bushWind);
   const flowers = scatter(1800, 37, 3.5, WORLD - 1, onLand);
-  instanced(root, new THREE.CylinderGeometry(0.018, 0.022, 0.3, 5), new THREE.MeshStandardMaterial({ roughness: 1 }), flowers, (_t, o, col) => {
+  // 꽃 줄기는 밑동에서 휘고 봉오리는 줄기 끝을 따라간다. 그림자는 너무 작아 그대로 둔다
+  const stemWind = `float bend = (position.y + 0.15) / 0.32; transformed.xz += wind * ${f(SWAY_FLOWER)} * bend * bend;`;
+  instanced(root, new THREE.CylinderGeometry(0.018, 0.022, 0.3, 5), sway(new THREE.MeshStandardMaterial({ roughness: 1 }), windTime, "stem", stemWind), flowers, (_t, o, col) => {
     o.position.y += 0.15;
     col.set("#88b57a");
   });
-  instanced(root, new THREE.SphereGeometry(0.09, 8, 6), new THREE.MeshStandardMaterial({ roughness: 0.9 }), flowers, (t, o, col) => {
+  instanced(root, new THREE.SphereGeometry(0.09, 8, 6), sway(new THREE.MeshStandardMaterial({ roughness: 0.9 }), windTime, "bud", `transformed.xz += wind * ${f(SWAY_FLOWER)};`), flowers, (t, o, col) => {
     o.position.y += 0.32;
     o.scale.set(1, 0.55, 1);
     col.setHSL([0, 0.08, 0.14, 0.78, 0.9, 0.55][Math.floor(t.r() * 6)], 0.6, 0.72);
@@ -108,4 +152,8 @@ export function buildWorld(root: THREE.Object3D) {
     o.position.y += s * 0.25;
     col.setHSL(0.09, 0.06, 0.55 + t.r() * 0.15);
   });
+
+  return {
+    update(dt: number) { windTime.value += dt; },
+  };
 }
