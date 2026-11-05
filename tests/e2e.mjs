@@ -2,6 +2,7 @@
 // (GPU 없는 서버에서 브라우저 둘을 렌더링하기엔 무거워서)
 // 실행: NODE_OPTIONS=--experimental-websocket node --env-file=.env.local tests/e2e.mjs <base url> <스크린샷 폴더>
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright";
 
@@ -59,7 +60,8 @@ console.log("ok 위치 동기화 양방향");
 // ── 돌 조작 ──
 const pickNearest = (minR = 0, maxR = 9) => a.evaluate(async ([minR, maxR]) => {
   const g = window.__doltap, s = g.debugState();
-  const c = s.stones.filter((x) => x.state === "ground" && x.radius >= minR && x.radius <= maxR)
+  // 바닥 돌은 몇 분 뒤 사라지므로, 곧 사라질 돌은 고르지 않는다
+  const c = s.stones.filter((x) => x.state === "ground" && x.radius >= minR && x.radius <= maxR && Date.parse(x.expires_at) > Date.now() + 15000)
     .sort((p, q) => Math.hypot(p.x - s.me.x, p.z - s.me.z) - Math.hypot(q.x - s.me.x, q.z - s.me.z))[0];
   g.debugTeleport(c.x + 0.3, c.z);
   // 저사양 렌더링에서는 이전 동작 애니메이션이 늦게 끝난다
@@ -99,15 +101,16 @@ assert.ok(stoneEvents.some((e) => e.eventType === "INSERT"), "탑 생성이 다�
 console.log("ok 첫돌로 탑 생성, 다른 접속자에게 전파");
 
 // 쌓기: 아래 돌보다 조금 작은 돌을 골라 첫돌 근처에 놓는다. 그래도 무너지면 첫돌부터 다시
-const stackUpTo = async (n) => {
+const myTower = (st) => st.towers.find((t) => t.owner_id === myId);
+const stackUpTo = async (n, [x, z] = [5, 3]) => {
   for (let guard = 0; guard < 30; guard++) {
     const st = await state();
-    const t = st.towers[0];
+    const t = myTower(st);
     if (!t) {
       await pickNearest(0.4);
-      await prepDrop(5, 3);
+      await prepDrop(x, z);
       console.log("첫돌:", await doDrop());
-      await until(() => window.__doltap.debugState().towers.length === 1);
+      await until((id) => window.__doltap.debugState().towers.some((t) => t.owner_id === id), myId);
       continue;
     }
     const own = st.stones.filter((x) => x.tower_id === t.id).sort((p, q) => p.order_index - q.order_index);
@@ -180,32 +183,82 @@ await a.waitForTimeout(3500);
 await a.screenshot({ path: `${out}/7-pray-front.png` });
 await a.evaluate(() => { const g = window.__doltap; g.me.state = "idle"; g.me.stateT = 0; g.orbitPitch = 0.55; g.orbitDist = 7.5; });
 
-// 5단까지 쌓고 화면에서 소원을 적는다
-const t2 = await stackUpTo(5);
-if ((await state()).towers.length) {
-  await a.waitForTimeout(600);
-  await a.keyboard.press("KeyF");
-  await a.getByPlaceholder("예: 올해는 책 100권 읽기").fill("가족 모두 건강하기");
-  await a.screenshot({ path: `${out}/8-wish-form.png` });
-  await a.getByRole("button", { name: "새기기" }).click();
-  await until(() => window.__doltap.debugState().towers[0]?.wish === "가족 모두 건강하기");
-  await a.evaluate(([x, z]) => { const g = window.__doltap; g.debugTeleport(x + 2.5, z + 2.5); }, [t2.x, t2.z]);
-  await a.waitForTimeout(1500);
-  await a.screenshot({ path: `${out}/9-wish-label.png` });
-  console.log("ok 소원이 탑에 표시");
-}
+const dialog = a.getByRole("alertdialog");
+const makeWish = async (text) => {
+  await a.getByPlaceholder("예: 올해는 책 100권 읽기").fill(text);
+  await a.getByRole("button", { name: "빌기" }).click();
+  await until((text) => window.__doltap.debugState().towers.some((t) => t.wish === text && t.owner_id === null), text);
+  assert.equal((await state()).hud.toast, "소원을 빌었습니다");
+  assert.equal((await state()).hud.myMinutes, null);
+};
 
-// 큰 돌을 계속 올려 붕괴시킨다: 탑과 소원이 사라지고 돌은 바닥으로
-for (let i = 0; i < 12 && (await state()).towers.length; i++) {
-  await pickNearest(0.45);
-  await prepDrop(t2.x + 0.1, t2.z - 0.8);
-  console.log("큰 돌:", await doDrop());
-}
-assert.equal((await state()).towers.length, 0, "큰 돌을 올려도 무너지지 않음");
+// 5단이 되면 묻고, [지금] → 입력폼 → [빌기]로 소원이 확정되면 소유권이 사라진다
+const t2 = await stackUpTo(5);
+await dialog.waitFor();
+assert.match(await dialog.innerText(), /탑은 최대 10층까지/);
+await a.screenshot({ path: `${out}/8-wish-prompt.png` });
+await a.setViewportSize({ width: 360, height: 740 });
+await a.waitForTimeout(800);
+await a.screenshot({ path: `${out}/8-wish-prompt-mobile.png` });
+await a.setViewportSize({ width: 1000, height: 562 });
+await dialog.getByRole("button", { name: "지금" }).click();
+assert.equal(await dialog.count(), 0);
+assert.equal(await a.getByRole("button", { name: "빌기" }).isDisabled(), true, "빈 소원으로 빌 수 있음");
+await a.getByPlaceholder("예: 올해는 책 100권 읽기").fill("가족 모두 건강하기");
+await a.screenshot({ path: `${out}/8-wish-form.png` });
+await makeWish("가족 모두 건강하기");
+await a.waitForTimeout(600);
+await a.screenshot({ path: `${out}/9-wish-label.png` });
+await a.evaluate(([x, z]) => window.__doltap.debugTeleport(x + 2.5, z + 2.5), [t2.x, t2.z]);
 await a.waitForTimeout(1500);
-await a.screenshot({ path: `${out}/10-collapsed.png` });
+await a.screenshot({ path: `${out}/9-wish-label-near.png` });
+assert.equal((await state()).towers.find((t) => t.id === t2.id).owner_name, "감자");
+console.log("ok 5단에서 [지금]으로 소원을 빌면 소유권이 사라지고 탑은 남음");
+
+// 곧바로 새 탑을 시작한다. 5단에서 [나중]을 누르면 계속 쌓다가 10단에서 다시 묻는다
+const t3 = await stackUpTo(5, [9, 3]);
+assert.notEqual(t3.id, t2.id);
+await dialog.waitFor();
+await dialog.getByRole("button", { name: "나중" }).click();
+assert.equal(await dialog.count(), 0);
+assert.equal(await a.getByPlaceholder("예: 올해는 책 100권 읽기").count(), 0);
+assert.ok(myTower(await state()), "[나중]을 눌렀는데 소유권이 사라짐");
+await a.waitForFunction(() => window.__doltap.hud().canWish);
+console.log("ok 새 탑 시작, 5단에서 [나중]");
+
+// 5~9단은 가벼운 돌을 DB에 직접 넣어 시간을 줄이고, 10단째만 실제로 올린다
+const dbUrl = process.env.DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+const top = (await state()).stones.filter((x) => x.tower_id === t3.id).sort((p, q) => q.order_index - p.order_index)[0];
+for (let k = 5; k <= 8; k++) {
+  execFileSync("psql", [dbUrl, "-Atq", "-c", `insert into stones (seed, radius, height, state, tower_id, order_index, x, z) values (1, 0.26, 0.1, 'stacked', '${t3.id}', ${k}, ${top.x}, ${top.z})`]);
+}
+await until((id) => window.__doltap.debugState().stones.filter((x) => x.tower_id === id).length === 9, t3.id);
+await stackUpTo(10, [9, 3]);
+await dialog.waitFor();
+assert.match(await dialog.innerText(), /최대 층을 달성했습니다\. 소원을 비세요/);
+await a.screenshot({ path: `${out}/10-wish-max.png` });
+await dialog.getByRole("button", { name: "확인" }).click();
+await makeWish("10층까지 쌓은 소원");
+console.log("ok 10단에서 [확인] 뒤 소원을 빌면 소유권이 사라짐");
+
+// 큰 돌을 계속 올려 붕괴시킨다: 소원을 빌기 전의 내 탑만 무너지고, 돌은 바닥으로
+await pickNearest(0.2, 0.25);
+assert.equal(await prepDrop(13, 3), "first");
+await doDrop();
+await until((id) => window.__doltap.debugState().towers.some((t) => t.owner_id === id), myId);
+const t4 = myTower(await state());
+for (let i = 0; i < 12 && myTower(await state()); i++) {
+  await pickNearest(0.45);
+  await prepDrop(t4.x + 0.1, t4.z - 0.8);
+  console.log("큰 돌:", await doDrop());
+  if (await dialog.count()) await dialog.getByRole("button", { name: "나중" }).click();
+}
+assert.equal(myTower(await state()), undefined, "큰 돌을 올려도 무너지지 않음");
+await a.waitForTimeout(1500);
+await a.screenshot({ path: `${out}/11-collapsed.png` });
 assert.equal((await state()).hud.myStones, 0);
-console.log("ok 붕괴로 탑과 소원 삭제");
+assert.equal((await state()).towers.length, 2, "소원을 빈 탑은 남아 있어야 함");
+console.log("ok 붕괴로 내 탑 삭제, 소원을 빈 탑은 유지");
 
 // 메시지는 5초 뒤 사라진다
 await a.evaluate(() => window.__doltap.toast("사라짐 확인"));

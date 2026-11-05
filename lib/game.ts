@@ -9,9 +9,12 @@ import { TowerLabel, floatingText } from "./three/label";
 import { makeStoneMesh } from "./three/stone";
 import { buildWorld } from "./three/world";
 
+// 소원을 빌 수 있게 된 순간(ready)과 최대 층에 닿은 순간(max)에 한 번씩 묻는다
+export type WishPrompt = "ready" | "max";
+
 export type HudState = {
   online: boolean; people: number; towers: number;
-  myStones: number; myMinutes: number | null; myLife: string; myWish: string | null;
+  myStones: number; myMinutes: number | null; myLife: string; wishPrompt: WishPrompt | null;
   carrying: boolean; prompt: string; action: "first" | "stack" | "discard" | "blocked" | "pick" | "pray" | null; dropKind: "first" | "stack" | "discard" | "blocked" | null;
   canPray: boolean; prayWait: number; canWish: boolean; cam: string; toastId: number; toast: string;
 };
@@ -65,6 +68,7 @@ export class Game {
   private ring: THREE.Mesh | null = null;
   private ringFor: string | null = null;
   inputLocked = false;
+  private wishPrompt: WishPrompt | null = null;
   private waterT = 0;
   private lastContact = 0;
 
@@ -193,14 +197,15 @@ export class Game {
     let t = this.towers.get(row.id);
     if (!t) {
       const label = new TowerLabel(this.font);
-      // 휴대폰에서는 남의 탑 푯말이 화면을 많이 가려서 절반 크기로 줄인다
-      if (row.owner_id !== this.net.uid && matchMedia(TOUCH_QUERY).matches) label.sprite.scale.multiplyScalar(0.5);
       this.root.add(label.sprite);
       t = { row, label, top: terrainY(row.x, row.z) };
       this.towers.set(row.id, t);
       this.restack(row.id);
     }
     t.row = row;
+    // 휴대폰에서는 남의 탑 푯말이 화면을 많이 가려서 절반 크기로 줄인다. 소원을 빌면 내 탑도 남의 탑이 된다
+    const k = row.owner_id !== this.net.uid && matchMedia(TOUCH_QUERY).matches ? 0.5 : 1;
+    t.label.sprite.scale.set(3.2 * k, k, 1);
   }
 
   private removeTower(id: string) {
@@ -372,10 +377,16 @@ export class Game {
   }
 
   private onDropResult(r: DropResult) {
+    if (r.result === "stacked" && (r.count === WISH_AT || r.count === MAX_STONES)) {
+      this.wishPrompt = r.count === WISH_AT ? "ready" : "max";
+      this.inputLocked = true;
+      this.releaseKeys();
+      return;
+    }
     const msg: Record<DropResult["result"], string> = {
       first: "첫돌을 놓았어요! 빛기둥이 내 탑을 알려줘요",
-      stacked: (r.count ?? 0) >= WISH_AT && !this.myTower?.row.wish ? `${r.count}단! 소원을 적을 수 있어요 (F)` : `${r.count}단!`,
-      collapsed: "와르르… 탑이 무너져 소원도 사라졌어요",
+      stacked: `${r.count}단!`,
+      collapsed: "와르르… 탑이 무너졌어요",
       discarded: "돌을 버렸어요. 첫돌 근처에 놓아야 쌓여요",
       too_close: "다른 탑과 너무 가까워요. 돌은 바닥에 놓였어요",
       full: `탑은 ${MAX_STONES}단까지예요. 돌은 바닥에 놓였어요`,
@@ -414,7 +425,18 @@ export class Game {
     const t = this.myTower;
     return !!t && this.towerStoneCount(t.row.id) >= WISH_AT;
   }
-  get currentWish() { return this.myTower?.row.wish ?? ""; }
+  get wishPromptOpen() { return !!this.wishPrompt; }
+  closeWishPrompt() {
+    this.wishPrompt = null;
+    this.inputLocked = false;
+  }
+  // 소원을 빌면 탑은 내 손을 떠난다. 실시간 이벤트를 기다리지 않고 바로 반영해 새 탑을 시작할 수 있게 한다
+  async makeWish(text: string) {
+    const mine = this.myTower;
+    const ok = await this.net.setWish(text);
+    if (ok && mine) this.applyTower({ ...mine.row, wish: text, owner_id: null });
+    this.toast(ok ? "소원을 빌었습니다" : "소원을 빌지 못했어요");
+  }
 
   // ───────── 프레임 ─────────
   update(dt: number) {
@@ -541,7 +563,7 @@ export class Game {
       t.label.sprite.visible = mine || dist < LABEL_RANGE;
       t.label.sprite.position.set(t.row.x, t.top + 0.3, t.row.z);
       const left = Date.parse(t.row.expires_at) - now;
-      const name = mine ? "내 탑" : `${t.row.owner_name}의 탑`;
+      const name = this.towerName(t.row);
       // 초마다 바뀌므로 보이는 라벨만 다시 그린다
       if (t.label.sprite.visible) t.label.set(t.row.wish, left > 0 ? `${name} · ${formatLife(left)}` : `${name} · 곧 사라져요`, left < 10 * 60000, mine);
     }
@@ -562,6 +584,11 @@ export class Game {
       this.root.remove(this.ring); this.ring = null; this.ringFor = null;
     }
     if (this.ring) this.ring.visible = !!this.myHeld;
+  }
+
+  private towerName(t: TowerRow) {
+    if (t.owner_id === this.net.uid) return "내 탑";
+    return t.owner_id ? `${t.owner_name}의 탑` : `${t.owner_name}의 소원`;
   }
 
   private buildRing(t: TowerRow) {
@@ -659,7 +686,7 @@ export class Game {
       : kind === "discard" ? "여기서 놓으면 버려져요 (E)"
       : kind === "blocked" ? "다른 탑과 너무 가까워요 (E)"
       : stone ? "돌 줍기 (E)"
-      : near ? `${near.row.owner_id === this.net.uid ? "내 탑" : near.row.owner_name + "의 탑"}에 합장하기 (Q)`
+      : near ? `${this.towerName(near.row)}에 합장하기 (Q)`
       : "";
     const action = kind ?? (stone ? "pick" : near ? "pray" : null);
     return {
@@ -667,7 +694,7 @@ export class Game {
       myStones: mine ? this.towerStoneCount(mine.row.id) : 0,
       myMinutes: mine ? Math.ceil((Date.parse(mine.row.expires_at) - Date.now()) / 60000) : null,
       myLife: mine ? formatLife(Date.parse(mine.row.expires_at) - Date.now()) : "",
-      myWish: mine?.row.wish ?? null,
+      wishPrompt: this.wishPrompt,
       carrying: !!this.myHeld, prompt, action, dropKind: kind,
       canPray: !!near, prayWait: near ? Math.ceil(this.prayWait(near.row.id) / 60000) : 0,
       canWish: this.canWishHere, cam: CAMS[this.camMode],

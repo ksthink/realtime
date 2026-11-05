@@ -8,7 +8,7 @@ export type StoneRow = {
   x: number; z: number; expires_at: string | null;
 };
 export type TowerRow = {
-  id: string; owner_id: string; owner_name: string;
+  id: string; owner_id: string | null; owner_name: string; // 소원을 빌면 owner_id가 비고, 이름만 남는다
   x: number; z: number; wish: string | null; expires_at: string;
 };
 export type CharacterRow = {

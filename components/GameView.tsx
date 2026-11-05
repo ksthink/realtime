@@ -4,9 +4,9 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import * as THREE from "three";
-import { Game, type HudState, type PlayerSpot } from "@/lib/game";
+import { Game, type HudState, type PlayerSpot, type WishPrompt } from "@/lib/game";
 import { type CharacterRow, Net } from "@/lib/net";
-import { WISH_AT, WISH_MAX } from "@/lib/rules";
+import { MAX_STONES, WISH_AT, WISH_MAX } from "@/lib/rules";
 import { soundDebug, startSound } from "@/lib/sound";
 import { CameraIcon, ClockIcon, CloseIcon, DiscardIcon, DragIcon, FirstStoneIcon, JoyIcon, PersonIcon, PickIcon, PrayIcon, RestIcon, SadIcon, SculptIcon, StackIcon, TowerIcon, WaveIcon, WishIcon } from "./Icons";
 
@@ -19,6 +19,11 @@ const ACTIONS = {
   discard: { icon: DiscardIcon, key: "E" },
   blocked: { icon: DiscardIcon, key: "E" },
   pray: { icon: PrayIcon, key: "Q" },
+};
+
+const WISH_PROMPTS: Record<WishPrompt, string> = {
+  ready: `이제 소원을 더 빌 수 있어요. 탑은 최대 ${MAX_STONES}층까지 쌓을 수 있답니다. 지금 비실 건가요? 아님 나중?`,
+  max: "최대 층을 달성했습니다. 소원을 비세요",
 };
 
 const REACTION_BUTTONS = [
@@ -74,7 +79,7 @@ function Scene({ onGame, db, me, font, start }: { onGame(g: Game | null): void; 
 }
 
 const EMPTY: HudState = {
-  online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myLife: "", myWish: null, carrying: false,
+  online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myLife: "", wishPrompt: null, carrying: false,
   prompt: "", action: null, dropKind: null, canPray: false, prayWait: 0, canWish: false, cam: "따라가기", toastId: 0, toast: "",
 };
 
@@ -88,6 +93,10 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   const markerRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
+  const wishAskRef = useRef<HTMLDivElement>(null);
+
+  // 버튼이 아니라 창에 포커스를 준다. 돌을 놓느라 누른 스페이스가 뗄 때 버튼을 눌러 버리지 않게 한다
+  useEffect(() => { if (hud.wishPrompt) wishAskRef.current?.focus(); }, [hud.wishPrompt]);
 
   // HUD 폴링: 프레임마다 React를 돌리지 않는다
   useEffect(() => {
@@ -113,26 +122,34 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   const openWish = () => {
     if (!game) return;
     if (!game.canWishHere) { game.toast(`내 탑을 ${WISH_AT}단 이상 쌓으면 소원을 적을 수 있어요`); return; }
-    setWish(game.currentWish);
-    game.inputLocked = true;
-    game.releaseKeys();
+    showWishForm(game);
+  };
+  const showWishForm = (g: Game) => {
+    setWish("");
+    g.inputLocked = true;
+    g.releaseKeys();
     setWishOpen(true);
   };
   const closeWish = () => { setWishOpen(false); if (game) game.inputLocked = false; };
+  const answerWishPrompt = (wishNow: boolean) => {
+    if (!game) return;
+    game.closeWishPrompt();
+    setHud(game.hud());
+    if (wishNow) showWishForm(game);
+  };
   const submitWish = async (e: FormEvent) => {
     e.preventDefault();
-    if (!game) return;
     const text = wish.trim();
+    if (!game || !text) return;
     closeWish();
-    if (!text) return;
-    game.toast((await game.net.setWish(text)) ? "소원을 탑에 새겼어요" : "소원을 새기지 못했어요");
+    await game.makeWish(text);
   };
 
   // 키보드
   useEffect(() => {
     if (!game) return;
     const down = (e: KeyboardEvent) => {
-      if (e.repeat || wishOpen || (e.target as HTMLElement)?.tagName === "INPUT") return;
+      if (e.repeat || wishOpen || game.wishPromptOpen || (e.target as HTMLElement)?.tagName === "INPUT") return;
       game.setKey(e.code, true);
       if (e.code === "KeyE" || e.code === "Space") { e.preventDefault(); void game.action(); }
       if (e.code === "KeyQ") void game.prayAction();
@@ -233,14 +250,32 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
         </div>
       )}
 
+      {hud.wishPrompt && (
+        <div className="help-back">
+          <div className="wish" ref={wishAskRef} tabIndex={-1} role="alertdialog" aria-modal="true" aria-describedby="wish-ask">
+            <p id="wish-ask" className="ask">{WISH_PROMPTS[hud.wishPrompt]}</p>
+            <div className="row">
+              {hud.wishPrompt === "ready" ? (
+                <>
+                  <button type="button" className="go" onClick={() => answerWishPrompt(true)}>지금</button>
+                  <button type="button" onClick={() => answerWishPrompt(false)}>나중</button>
+                </>
+              ) : (
+                <button type="button" className="go" onClick={() => answerWishPrompt(true)}>확인</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {wishOpen && (
         <form className="wish" onSubmit={submitWish}>
           <label htmlFor="wish-text">탑에 새길 소원</label>
-          <p>접속한 모두에게 보이고, 탑이 무너지거나 수명이 다하면 사라져요.</p>
+          <p>접속한 모두에게 보이고, 탑의 수명이 다하면 사라져요.</p>
           <input id="wish-text" autoFocus maxLength={WISH_MAX} value={wish} onChange={(e) => setWish(e.target.value)} placeholder="예: 올해는 책 100권 읽기" autoComplete="off" />
           <div className="row">
             <button type="button" onClick={closeWish}>취소</button>
-            <button type="submit" className="go">새기기</button>
+            <button type="submit" className="go" disabled={!wish.trim()}>빌기</button>
           </div>
         </form>
       )}

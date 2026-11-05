@@ -144,6 +144,34 @@ test("합장: 기본 하루에 +1시간, 같은 탑은 10분에 한 번, 다른 
   clean(a);
 });
 
+test("소원을 빌면 소유권이 사라지고, 이름과 소원은 남으며, 곧바로 새 탑을 시작할 수 있다", async () => {
+  const p = await player("떠남");
+  const other = await player("합장객");
+  const { tower_id: t } = await carryAndDrop(p, stone(0.3), 52, 15);
+  for (let k = 1; k <= 4; k++) {
+    sql(`insert into stones (seed, radius, height, state, tower_id, order_index, x, z) values (1, 0.3, 0.2, 'stacked', '${t}', ${k}, 52, 15)`);
+  }
+  assert.equal(await rpc(p, "set_wish", { p_wish: "첫 소원" }), true);
+  assert.equal(sql(`select owner_id is null, owner_name, wish from towers where id='${t}'`), "t|떠남|첫 소원");
+
+  // 소유권이 없으니 소원을 고칠 수 없고, 근처에 놓은 돌도 그 탑에 쌓이지 않는다
+  assert.equal(await rpc(p, "set_wish", { p_wish: "고친 소원" }), false);
+  assert.equal(sql(`select wish from towers where id='${t}'`), "첫 소원");
+  assert.equal((await carryAndDrop(p, stone(0.3), 52.5, 15)).result, "too_close");
+  assert.equal(sql(`select count(*) from stones where tower_id='${t}'`), "5");
+
+  // 합장은 그대로 받는다
+  assert.equal((await rpc(other, "pray", { p_tower: t })).ok, true);
+
+  // 떨어진 곳에는 새 탑을 시작할 수 있다
+  const next = await carryAndDrop(p, stone(0.3), 62, 15);
+  assert.equal(next.result, "first");
+  assert.notEqual(next.tower_id, t);
+
+  sql(`delete from towers where id='${t}'`);
+  clean(p);
+});
+
 test("소원은 5단부터 24자까지, 내 탑에만", async () => {
   const p = await player("소원");
   const { tower_id: t } = await carryAndDrop(p, stone(0.3), 50, 5);
@@ -153,6 +181,7 @@ test("소원은 5단부터 24자까지, 내 탑에만", async () => {
   }
   assert.equal(await rpc(p, "set_wish", { p_wish: "가".repeat(40) }), true);
   assert.equal(sql(`select wish from towers where id='${t}'`), "가".repeat(24));
+  sql(`delete from towers where id='${t}'`);
   clean(p);
 });
 
