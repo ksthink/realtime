@@ -69,14 +69,14 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
 
 /* 터치 */
 .touch { position: fixed; inset: 0; pointer-events: none; z-index: 4; display: none; }
-.stick { position: absolute; left: max(24px, env(safe-area-inset-left, 0px)); bottom: calc(28px + env(safe-area-inset-bottom, 0px)); width: 144px; height: 144px; border-radius: 50%; background: rgba(255, 255, 255, 0.35); pointer-events: auto; touch-action: none; }
-.knob { position: absolute; left: 42px; top: 42px; width: 60px; height: 60px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); box-shadow: 0 2px 8px rgba(74, 63, 82, 0.15); }
-.btn { position: absolute; right: max(24px, env(safe-area-inset-right, 0px)); bottom: calc(28px + env(safe-area-inset-bottom, 0px)); width: 38px; height: 38px; padding: 0; border-radius: 50%; border: 0; background: var(--accent); color: #4a2a24; font-size: 11px; pointer-events: auto; touch-action: manipulation; box-shadow: 0 3px 12px rgba(242, 154, 138, 0.45); }
-.btn.small { width: 28px; height: 28px; background: var(--chip); color: var(--ink); font-size: 9px; letter-spacing: -0.04em; white-space: nowrap; right: max(29px, env(safe-area-inset-right, 0px)); box-shadow: 0 2px 10px rgba(74, 63, 82, 0.12); }
+.stick { position: absolute; left: max(24px, env(safe-area-inset-left, 0px)); bottom: calc(28px + env(safe-area-inset-bottom, 0px)); width: 96px; height: 96px; border-radius: 50%; background: rgba(255, 255, 255, 0.35); pointer-events: auto; touch-action: none; }
+.knob { position: absolute; left: 28px; top: 28px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); box-shadow: 0 2px 8px rgba(74, 63, 82, 0.15); }
+.btn { position: absolute; right: max(24px, env(safe-area-inset-right, 0px)); bottom: calc(28px + env(safe-area-inset-bottom, 0px)); width: 46px; height: 46px; padding: 0; border-radius: 50%; border: 0; background: var(--accent); color: #4a2a24; font-size: 13px; pointer-events: auto; touch-action: manipulation; box-shadow: 0 3px 12px rgba(242, 154, 138, 0.45); }
+.btn.small { width: 34px; height: 34px; background: var(--chip); color: var(--ink); font-size: 11px; letter-spacing: -0.04em; white-space: nowrap; right: max(30px, env(safe-area-inset-right, 0px)); box-shadow: 0 2px 10px rgba(74, 63, 82, 0.12); }
 .btn.small:disabled { opacity: 0.45; }
-.btn.pray { bottom: calc(74px + env(safe-area-inset-bottom, 0px)); }
-.btn.wishb { bottom: calc(110px + env(safe-area-inset-bottom, 0px)); }
-.btn.cam { bottom: calc(146px + env(safe-area-inset-bottom, 0px)); }
+.btn.pray { bottom: calc(82px + env(safe-area-inset-bottom, 0px)); }
+.btn.wishb { bottom: calc(124px + env(safe-area-inset-bottom, 0px)); }
+.btn.cam { bottom: calc(166px + env(safe-area-inset-bottom, 0px)); }
 @media (hover: none), (pointer: coarse) {
   .touch { display: block; }
   .hud.tr.keys .chip.key:not(.link) { display: none; }
@@ -84,10 +84,16 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
   .only-touch { display: grid !important; }
   .stat.action kbd { display: none; }
   .help-btn { display: none; }
-  /* 조이스틱(왼쪽 168px)과 줍기 버튼(오른쪽 62px) 사이의 가운데에 한 줄로. 좁은 화면에서는 줍기 버튼에 닿지 않게 오른쪽을 고정한다 */
-  .hud.reactions { left: auto; right: max(66px, calc(50% - 121.5px)); transform: none; bottom: calc(31px + env(safe-area-inset-bottom, 0px)); gap: 3px; }
+  /* 조이스틱(왼쪽 120px)과 줍기 버튼(오른쪽 70px) 사이의 가운데, 줍기 버튼과 같은 높이에 한 줄로 */
+  .hud.reactions { left: calc(50% + 25px); bottom: calc(35px + env(safe-area-inset-bottom, 0px)); gap: 5px; }
   .chip.react { width: 32px; height: 32px; }
   .chip.react svg { width: 16px; height: 16px; }
+  /* 아주 좁은 화면에서도 리액션 줄이 양옆 조작부에 닿지 않게 한다 */
+  @media (max-width: 340px) {
+    .hud.reactions { gap: 3px; }
+    .chip.react { width: 28px; height: 28px; }
+    .chip.react svg { width: 14px; height: 14px; }
+  }
 }
 
 /* 빚기 */

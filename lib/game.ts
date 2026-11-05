@@ -325,7 +325,7 @@ export class Game {
   zoom(d: number) { this.orbitDist = clamp(this.orbitDist + d * 0.01, 3, 18); }
   cycleCam() {
     this.camMode = (this.camMode + 1) % CAMS.length;
-    this.toast(`카메라: ${CAMS[this.camMode]}`);
+    this.toast(`뷰: ${CAMS[this.camMode]}`);
   }
   toast(msg: string) { this.toastMsg = msg; this.toastId++; }
 

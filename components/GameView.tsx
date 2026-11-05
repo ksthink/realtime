@@ -152,11 +152,11 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   const joyMove = (e: React.PointerEvent) => {
     if (!game || !stickRef.current) return;
     const rc = stickRef.current.getBoundingClientRect();
-    let x = (e.clientX - rc.left - 72) / 54, y = (e.clientY - rc.top - 72) / 54;
+    let x = (e.clientX - rc.left - 48) / 36, y = (e.clientY - rc.top - 48) / 36;
     const l = Math.hypot(x, y);
     if (l > 1) { x /= l; y /= l; }
     game.joy = { x, y };
-    if (knobRef.current) knobRef.current.style.transform = `translate(${x * 48}px,${y * 48}px)`;
+    if (knobRef.current) knobRef.current.style.transform = `translate(${x * 32}px,${y * 32}px)`;
   };
   const joyEnd = () => {
     if (game) game.joy = { x: 0, y: 0 };
@@ -255,7 +255,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
         <button type="button" className="btn act" onClick={() => void game?.action()}>{hud.carrying ? "놓기" : "줍기"}</button>
         <button type="button" className="btn small pray" disabled={!hud.canPray} onClick={() => void game?.prayAction()}>합장</button>
         <button type="button" className="btn small wishb" disabled={!hud.canWish} onClick={openWish}>소원</button>
-        <button type="button" className="btn small cam" onClick={() => game?.cycleCam()}>카메라</button>
+        <button type="button" className="btn small cam" onClick={() => game?.cycleCam()}>뷰</button>
       </div>
     </div>
   );
