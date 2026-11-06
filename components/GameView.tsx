@@ -99,6 +99,8 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   const [wishOpen, setWishOpen] = useState(false);
   const [wish, setWish] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const statsRef = useRef<HTMLPreElement>(null);
   const markerRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
@@ -111,9 +113,17 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   useEffect(() => {
     if (!game) return;
     const id = setInterval(() => setHud(game.hud()), 150);
-    let raf = 0;
+    let raf = 0, frames = 0, since = performance.now(), fps = 0;
     const tick = () => {
       if (markerRef.current) game.placeMarker(markerRef.current, innerWidth, innerHeight);
+      // 프레임 레이트는 0.5초마다 센다
+      frames++;
+      const now = performance.now();
+      if (now - since >= 500) { fps = (frames * 1000) / (now - since); frames = 0; since = now; }
+      if (statsRef.current) {
+        const c = game.coords;
+        statsRef.current.textContent = `x ${c.x.toFixed(2)}\ny ${c.y.toFixed(2)}\nz ${c.z.toFixed(2)}\n${fps.toFixed(0)} fps`;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -163,6 +173,12 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   useEffect(() => {
     if (!game) return;
     const down = (e: KeyboardEvent) => {
+      // Ctrl + ? (Ctrl + Shift + /, Ctrl + / 도 같은 키)로 좌표·프레임 오버레이를 켜고 끈다
+      if (e.ctrlKey && (e.code === "Slash" || e.key === "?") && !e.repeat && (e.target as HTMLElement)?.tagName !== "INPUT") {
+        e.preventDefault();
+        setStatsOpen((v) => !v);
+        return;
+      }
       if (e.repeat || wishOpen || game.askOpen || (e.target as HTMLElement)?.tagName === "INPUT") return;
       game.setKey(e.code, true);
       if (e.code === "KeyE" || e.code === "Space") { e.preventDefault(); void game.action(); }
@@ -232,6 +248,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
       </div>
 
       <div className={`toast ${toastOn ? "on" : ""}`} role="status">{hud.toast}</div>
+      {statsOpen && <pre className="stats" ref={statsRef} aria-label="현재 좌표와 프레임 레이트" />}
 
       <div className="hud reactions">
         {REACTION_BUTTONS.map(({ kind, icon: Icon, label }) => (

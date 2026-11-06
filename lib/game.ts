@@ -837,6 +837,12 @@ export class Game {
     this.me.g.position.set(x, 0, z);
   }
 
+  // 좌표 오버레이용: 발이 딛는 높이(y)와 함께
+  get coords() {
+    const p = this.me.g.position;
+    return { x: p.x, y: this.me.baseY, z: p.z };
+  }
+
   get spot(): PlayerSpot {
     const p = this.me.g.position;
     return { x: p.x, z: p.z, yaw: this.me.yaw };

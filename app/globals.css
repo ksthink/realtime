@@ -63,6 +63,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
 .toast { position: fixed; left: 50%; top: calc(20% + env(safe-area-inset-top, 0px)); transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px); background: var(--chip); backdrop-filter: blur(8px); border-radius: 14px; padding: 10px 18px; font-size: 18px; text-align: center; text-wrap: balance; opacity: 0; transition: opacity 1s ease; pointer-events: none; z-index: 6; }
 .toast.on { opacity: 1; transition: opacity 0.25s ease; }
 
+/* Ctrl + ? 로 여는 좌표·프레임 오버레이 */
+.stats { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); margin: 0; z-index: 7; background: rgba(36, 30, 42, 0.72); color: #f4f1f7; border-radius: 10px; padding: 8px 12px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; white-space: pre; pointer-events: none; }
+
 /* 내 탑 위치 표시: 빛기둥과 함께 화면 위에 거리를 띄운다 */
 .marker { position: fixed; left: 0; top: 0; z-index: 4; align-items: center; gap: 6px; background: var(--accent); color: #4a2a24; border-radius: 999px; padding: 5px 12px; font-size: 13px; white-space: nowrap; pointer-events: none; box-shadow: 0 3px 12px rgba(242, 154, 138, 0.5); will-change: transform; }
 .marker .arrow { font-size: 11px; line-height: 1; }
