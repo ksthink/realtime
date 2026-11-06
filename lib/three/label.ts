@@ -68,6 +68,39 @@ export class TowerLabel {
     if (this.truncated) this.expanded = !this.expanded;
   }
 
+  // 조금 떨어진 탑: 내용 없이 「…」만 있는 작은 말풍선
+  setBrief(mine: boolean) {
+    const key = `brief|${mine}`;
+    if (key === this.key) return;
+    this.key = key;
+    this.truncated = false;
+    const ctx = this.cv.getContext("2d")!;
+    ctx.clearRect(0, 0, W, H);
+    const w = 120, h = 66, y = BASE - h;
+    this.box = { left: W / 2 - w / 2, right: W / 2 + w / 2, top: y };
+    ctx.fillStyle = "rgba(255,252,246,.94)";
+    ctx.beginPath();
+    ctx.roundRect(W / 2 - w / 2, y, w, h, 22);
+    ctx.fill();
+    ctx.fillStyle = mine ? "#f29a8a" : "rgba(255,252,246,.94)";
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 14, BASE); ctx.lineTo(W / 2 + 14, BASE); ctx.lineTo(W / 2, BASE + 24);
+    ctx.fill();
+    ctx.fillStyle = "#6f6478";
+    for (const dx of [-26, 0, 26]) {
+      ctx.beginPath();
+      ctx.arc(W / 2 + dx, y + h / 2, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    this.tex.needsUpdate = true;
+  }
+
+  // 단계가 바뀔 때 부드럽게 나타나고 사라진다
+  setOpacity(a: number) {
+    this.sprite.material.opacity = a;
+    this.sprite.visible = a > 0;
+  }
+
   set(name: string, wish: string | null, sub: string, urgent: boolean, mine: boolean) {
     const key = `${name}|${wish}|${sub}|${urgent}|${mine}|${this.expanded}`;
     if (key === this.key) return;

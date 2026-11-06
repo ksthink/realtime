@@ -28,7 +28,7 @@ type StoneView = {
   from: THREE.Vector3 | null; to: THREE.Vector3; t: number; dur: number; arc: number;
   grow: number; dying: boolean; landSound?: boolean;
 };
-type TowerView = { row: TowerRow; label: TowerLabel; top: number };
+type TowerView = { row: TowerRow; label: TowerLabel; top: number; stage: 0 | 1 | 2; shown: 0 | 1 | 2; alpha: number }; // stage: 0 안 보임, 1 「…」, 2 내용
 type Remote = { blob: Blob; target: THREE.Vector3; targetYaw: number; moving: boolean; seen: boolean; prayUntil: number; lastX: number; lastZ: number; splashD: number };
 type Floater = { sprite: THREE.Sprite; t: number };
 
@@ -37,7 +37,10 @@ const SUN_OFF = new THREE.Vector3(8, 14, 6);
 const UP = new THREE.Vector3(0, 1, 0);
 // 안개(가까이, 멀리)와 카메라가 그리는 거리. 땅에서는 앞의 값, 동산 꼭대기에서는 뒤의 값으로 천천히 바뀐다
 const FOG_GROUND = [48, 150, 260], FOG_TOP = [110, 300, 320];
-const LABEL_RANGE = 10; // 남의 탑 푯말은 이 거리 안에서만 보인다. 내 탑은 항상 보인다
+// 탑 푯말: 가까이(LABEL_NEAR 안)는 내용 전체, 조금 떨어지면 「…」, 멀면 안 보인다.
+// 나타나는 거리와 사라지는 거리를 달리 둬 경계에서 깜빡이지 않게 한다. 내 탑도 같은 규칙이다
+const LABEL_NEAR = 2, LABEL_NEAR_OUT = 2.5, LABEL_FAR = 12, LABEL_FAR_OUT = 13;
+const LABEL_FADE = 0.18; // 단계가 바뀔 때 사라졌다 나타나는 시간(초)
 const PICK_SWITCH_GAIN = 0.15; // 다른 돌이 이만큼(미터) 더 가까워야 대상을 바꾼다. 거리가 비슷한 돌 사이에서 깜빡이지 않게 한다
 const GLOW_FADE = 0.12; // 대상 표시가 사라지거나 나타나는 시간(초)
 const TOUCH_QUERY = "(hover: none), (pointer: coarse)"; // globals.css의 모바일 조건과 같다
@@ -220,7 +223,8 @@ export class Game {
     if (!t) {
       const label = new TowerLabel(this.font);
       this.root.add(label.sprite);
-      t = { row, label, top: groundAt(row.x, row.z) };
+      t = { row, label, top: groundAt(row.x, row.z), stage: 0, shown: 0, alpha: 0 };
+      label.setOpacity(0);
       this.towers.set(row.id, t);
       this.restack(row.id);
     }
@@ -534,7 +538,7 @@ export class Game {
     this.updateStones(dt);
     this.refreshPickTarget();
     this.updateGlow(dt);
-    this.updateTowers();
+    this.updateTowers(dt);
     this.updateFloaters(dt);
     this.updateCamera(dt);
     this.updatePoseSend(dt);
@@ -665,18 +669,32 @@ export class Game {
   }
 
   private labelT = 0;
-  private updateTowers() {
+  private updateTowers(dt: number) {
     const now = Date.now();
     const p = this.me.g.position;
+    // 내용을 펼치는 탑은 가까운 탑 하나뿐이다. 이미 펼친 탑은 조금 더 멀어질 때까지 유지한다
+    let open: TowerView | null = null, openD = Infinity;
+    for (const t of this.towers.values()) {
+      const d = Math.hypot(t.row.x - p.x, t.row.z - p.z);
+      if (d < (t.stage === 2 ? LABEL_NEAR_OUT : LABEL_NEAR) && d < openD) { open = t; openD = d; }
+    }
     for (const t of this.towers.values()) {
       const mine = t.row.owner_id === this.net.uid;
       const dist = Math.hypot(t.row.x - p.x, t.row.z - p.z);
-      t.label.sprite.visible = mine || dist < LABEL_RANGE;
+      t.stage = t === open ? 2 : dist < (t.stage ? LABEL_FAR_OUT : LABEL_FAR) ? 1 : 0;
+      // 보이는 단계가 바뀌면 먼저 흐려져 사라진 뒤 새 모습으로 나타난다
+      if (t.shown !== t.stage) {
+        t.alpha -= dt / LABEL_FADE;
+        if (t.alpha <= 0) { t.alpha = 0; t.shown = t.stage; }
+      } else if (t.shown) t.alpha = Math.min(1, t.alpha + dt / LABEL_FADE);
+      t.label.setOpacity(t.alpha);
       t.label.sprite.position.set(t.row.x, t.top + 0.3, t.row.z);
+      if (!t.shown) continue;
+      if (t.shown === 1) { t.label.setBrief(mine); continue; }
       const left = Date.parse(t.row.expires_at) - now;
       const life = left > 0 ? formatLife(left) : "곧 사라져요";
       // 초마다 바뀌므로 보이는 라벨만 다시 그린다
-      if (t.label.sprite.visible) t.label.set(t.row.owner_name, t.row.wish, t.row.wish ? life : `${this.towerName(t.row)} · ${life}`, left < 10 * 60000, mine);
+      t.label.set(t.row.owner_name, t.row.wish, t.row.wish ? life : `${this.towerName(t.row)} · ${life}`, left < 10 * 60000, mine);
     }
 
     // 내 첫돌 표시: 멀리서도 보이는 빛기둥과, 돌을 들었을 때 쌓이는 범위
