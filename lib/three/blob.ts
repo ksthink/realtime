@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import { lerp, rng } from "../terrain";
+import { type Dims, type Pose, handPose, idlePose, makePose, prayPose, reactionPose, walkPose } from "./motions";
+import { type Rig, bodyProfile, buildRig, footGeometry, handGeometry, orientFoot, orientHand, pushOut, radiusAt, solve } from "./rig";
 
 // ── 몸통: 구 위상을 공유하는 정점. 네트워크로는 고유 정점만 int16으로 보낸다 (약 6.5KB) ──
 const DETAIL = 8;
@@ -96,13 +98,6 @@ export function randomPalette(r: () => number) {
 }
 
 // ── 캐릭터 ──
-function makeTube(points: number[][], radius: number, color: THREE.Color) {
-  const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
-  const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 10, radius, 8, false), new THREE.MeshStandardMaterial({ color, roughness: 0.95 }));
-  m.castShadow = true;
-  return m;
-}
-
 function nameSprite(name: string, font: string) {
   const cv = document.createElement("canvas");
   cv.width = 256; cv.height = 64;
@@ -135,20 +130,25 @@ const nextIdleWait = () => 4 + Math.random() * 6; // 행동 사이의 쉬는 시
 
 export type Blob = {
   g: THREE.Group; body: THREE.Mesh; mouth: THREE.Mesh;
-  legs: THREE.Group[]; arms: THREE.Group[]; prayArms: THREE.Group; coverArms: THREE.Group;
+  rig: Rig; dims: Dims; pose: Pose;
   yaw: number; state: "idle" | "pickup" | "place" | "pray" | Reaction; stateT: number;
   carrying: boolean; walk: number; bob: number; baseY: number; prayK: number;
+  moveK: number; carryK: number; bodyRy: number;
   restK: number; waveK: number; joyK: number; sadK: number; joyH: number; sitDrop: number;
-  holdPoint: THREE.Vector3;
+  // 들고 있는 돌의 바닥 가운데(캐릭터 공간, 매 프레임 머리를 따라간다)와 돌 크기(game이 채운다)
+  holdPoint: THREE.Vector3; holdR: number; holdH: number;
   idleWait: number; idleKind: IdleAction; idleOn: boolean; idleT: number; idleK: number; idleArm: 0 | 1;
 };
 
 export type BlobInit = { seed: number; name: string; top: string; bottom: string; body: string };
 
+const SHOULDER_FWD = 0.5; // 어깨가 옆에서 앞으로 돌아간 각(라디안)
+
 export function makeBlob(init: BlobInit, font: string): Blob {
   const r = rng(init.seed);
   const top = new THREE.Color(init.top), bottom = new THREE.Color(init.bottom);
   const limb = bottom.clone().lerp(new THREE.Color("#ffffff"), 0.1);
+  const skin = limb.clone().lerp(new THREE.Color("#ffe3d2"), 0.55);
   const g = new THREE.Group();
   const geo = decodeBody(init.body);
   colorize(geo, bottom, top);
@@ -195,140 +195,92 @@ export function makeBlob(init: BlobInit, font: string): Blob {
   attach(mouth, hit(0, legLen + H * (0.5 + r() * 0.08), 5, 0, 0, -1), 0.01);
   if (mouthKind === 1) mouth.rotateZ(Math.PI);
 
-  // 다리: 아래에서 위로 쏴서 바닥면을 찾는다
-  const legs: THREE.Group[] = [];
+  const profile = bodyProfile(body, H, legLen);
+  const side = (y: number, s: number) => radiusAt(profile, y, s * Math.PI / 2); // 몸 공간 높이 y에서 옆 겉면까지
+
+  // 엉덩이: 아래에서 위로 쏴서 바닥면을 찾고 조금 안쪽에 둔다(몸 공간)
   const legX = Math.min(W * 0.3, 0.14 + r() * 0.12);
+  const hip: THREE.Vector3[] = [], legR: number[] = [], footR: number[] = [];
   for (const s of [-1, 1]) {
     const h = hit(s * legX, -1, 0, 0, 1, 0) || hit(0, -1, 0, 0, 1, 0);
-    const px = h ? h.point.x : s * legX, py = h ? h.point.y : legLen, pz = h ? h.point.z : 0;
-    const p = new THREE.Group();
-    p.position.set(px, py + 0.04, pz);
-    const L = py + 0.04;
-    const t = makeTube([[0, 0, 0], [s * 0.02, -L * 0.5, 0.02], [0, -L, 0]], 0.055 + r() * 0.02, limb);
-    p.add(t);
-    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.075 + r() * 0.03, 10, 8), t.material);
-    foot.position.set(0, -L, 0.05);
-    foot.scale.set(1, 0.8, 1.3);
-    p.add(foot);
-    g.add(p);
-    legs.push(p);
+    hip.push(new THREE.Vector3(h ? h.point.x : s * legX, (h ? h.point.y : legLen) - legLen + 0.04, h ? h.point.z : 0));
+    legR.push(0.055 + r() * 0.02);
+    footR.push(0.075 + r() * 0.03);
   }
+  const footY = (footR[0] + footR[1]) / 2 * 0.8 * 0.55; // 발이 땅에 살짝만 묻히게
+  // 서 있을 때 무릎이 아주 조금 굽도록 다리를 엉덩이~발목보다 3% 길게
+  const legLength = (legLen + Math.min(hip[0].y, hip[1].y) - footY) / 0.97;
 
-  // 팔: 옆에서 안쪽으로 쏴서 어깨를 찾는다. 합장은 어깨에서 가슴 앞으로 굽힌 별도의 팔을 켜서 표현한다
-  const arms: THREE.Group[] = [];
-  const prayArms = new THREE.Group();
-  prayArms.visible = false;
-  g.add(prayArms);
+  // 어깨: 옆에서 안쪽으로 쏴서 찾고 겉면보다 조금 안에 둔다(몸 공간)
   const armY = legLen + H * (0.52 + r() * 0.16), armL = 0.8 + r() * 0.5, handS = 0.8 + r() * 0.5;
-  // 얼굴(몸통 높이의 50~78%)을 가리지 않도록 손은 그 아래 가슴 앞에 모은다
-  const prayY = legLen + H * 0.34;
-  const chest = hit(0, prayY, 5, 0, 0, -1);
-  const prayAt = new THREE.Vector3(0, prayY, (chest ? chest.point.z : W * 0.45) + 0.14);
-  // 슬픔 팔: 머리와 함께 흔들리도록 body의 자식. 어깨 높이를 축으로 삼아 손이 아래에서 얼굴로 올라오게 한다
-  const coverArms = new THREE.Group();
-  coverArms.visible = false;
-  coverArms.position.y = armY - legLen;
-  body.add(coverArms);
-  const coverY = legLen + H * 0.63;
+  const armLen = 0.45 * armL + 0.28;
+  const palm = 0.045 * handS, palmT = 0.0465 * handS;
+  const shoulder: THREE.Vector3[] = [], hang: THREE.Vector3[] = [], cover: THREE.Vector3[] = [];
+  const coverY = eyeY; // 눈을 가린다
   for (const s of [-1, 1]) {
-    const h = hit(s * 5, armY, 0.05, -s, 0, 0);
-    const p = new THREE.Group();
-    if (h?.face) p.position.copy(h.point).addScaledVector(h.face.normal, -0.02);
-    else p.position.set(s * W * 0.45, armY, 0.05);
-    p.add(makeTube([[0, 0, 0], [s * 0.14 * armL, -0.05, 0.06], [s * 0.24 * armL, -0.18, 0.1]], 0.045, limb));
-    const skin = new THREE.MeshStandardMaterial({ color: limb.clone().lerp(new THREE.Color("#ffe3d2"), 0.55), roughness: 0.9 });
-    // 손: 팔 끝에서 팔이 뻗은 방향으로 늘어뜨린다. 손바닥은 몸 쪽을 보고, 손가락 셋은 아래로 살짝 오므리며, 엄지는 앞쪽에 따로 붙는다.
-    // 손 안에서 +y가 손목 → 손끝, +x가 손등(바깥). 앞은 오른팔에서 -z, 왼팔에서 +z라 엄지는 -s 쪽에 둔다
-    const hand = new THREE.Group();
-    const wrist = new THREE.Vector3(s * 0.24 * armL, -0.18, 0.1);
-    const along = wrist.clone().sub(new THREE.Vector3(s * 0.14 * armL, -0.05, 0.06)).normalize();
-    hand.position.copy(wrist);
-    // 팔 관은 끝이 뚫려 있어, 손목에 팔 굵기만 한 공을 붙여 막고 손바닥이 그 위에 겹치게 해 팔과 손이 이어져 보이게 한다
-    const cuff = new THREE.Mesh(new THREE.SphereGeometry(0.047, 10, 8), new THREE.MeshStandardMaterial({ color: limb, roughness: 0.95 }));
-    cuff.position.copy(wrist);
-    cuff.castShadow = true;
-    p.add(cuff);
-    const out = new THREE.Vector3(s, 0, 0).addScaledVector(along, -s * along.x).normalize(); // 팔 방향에 수직인 바깥쪽
-    hand.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(out, along, new THREE.Vector3().crossVectors(out, along)));
-    hand.scale.setScalar(handS);
-    const palm = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10), skin);
-    palm.position.y = 0.045;
-    palm.scale.set(0.62, 1.05, 1);
-    palm.castShadow = true;
-    hand.add(palm);
-    for (let i = -1; i <= 1; i++) {
-      const f = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), skin);
-      f.position.set(-0.012, 0.12 - Math.abs(i) * 0.012, i * 0.038);
-      f.rotation.z = 0.35; // 손바닥 쪽(몸 쪽)으로 살짝 굽힌다
-      f.scale.set(0.9, 1.5, 0.9);
-      hand.add(f);
-    }
-    const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), skin);
-    thumb.position.set(-0.02, 0.035, -s * 0.078);
-    thumb.rotation.x = -s * 0.7; // 앞으로 비스듬히
-    thumb.scale.set(0.9, 1.45, 0.9);
-    hand.add(thumb);
-    p.add(hand);
-    g.add(p);
-    arms.push(p);
-
-    // 합장 팔: 어깨 → 팔꿈치(바깥 아래) → 가슴 앞. 손바닥은 세워서 가운데에서 맞댄다
-    const sx = p.position.x, sy = p.position.y, sz = p.position.z;
-    const handAt = new THREE.Vector3(s * 0.05, prayAt.y, prayAt.z);
-    prayArms.add(makeTube([[sx, sy, sz], [lerp(sx, handAt.x, 0.35) + s * 0.08, sy - 0.14, lerp(sz, handAt.z, 0.6)], [handAt.x + s * 0.04, handAt.y - 0.12, handAt.z]], 0.045, limb));
-    const prayHand = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 10), skin);
-    prayHand.position.copy(handAt);
-    prayHand.scale.set(0.42, 1.55, 0.95);
-    prayHand.rotation.x = -0.12;
-    prayHand.castShadow = true;
-    prayArms.add(prayHand);
-
-    // 슬픔 팔: 어깨 → 팔꿈치(몸 표면 대각선 앞) → 얼굴 앞. 손이 닿는 범위의 가장 앞쪽 표면보다 띄워서 묻히지 않게 한다
+    // 옆에서 앞쪽으로 SHOULDER_FWD만큼 돌린 방향에 붙인다. 손이 가슴·얼굴 앞으로 올 때 팔이 둥근 몸을 덜 파고든다
+    const sa = Math.sin(SHOULDER_FWD), ca = Math.cos(SHOULDER_FWD);
+    const h = hit(s * ca * 5, armY, sa * 5, -s * ca, 0, -sa);
+    const p = h?.face ? h.point.clone().addScaledVector(h.face.normal, -0.03) : new THREE.Vector3(s * W * 0.45 * ca, armY, W * 0.45 * sa);
+    p.y -= legLen;
+    shoulder.push(p);
+    const hy = p.y - armLen * 0.9;
+    hang.push(new THREE.Vector3(s * (side(hy, s) + palmT + 0.08), hy, p.z + 0.05));
+    // 얼굴 가리기: 손이 닿는 범위의 가장 앞쪽 표면보다 띄워서 묻히지 않게 한다
     const coverX = s * (eyeX + 0.03);
     let front = -Infinity;
     for (const dx of [-0.11, 0, 0.11]) for (const dy of [-0.1, 0, 0.16]) {
       const f = hit(coverX + dx * handS, coverY + dy * handS, 5, 0, 0, -1);
       if (f) front = Math.max(front, f.point.z);
     }
-    const coverZ = (front > -Infinity ? front : W * 0.45) + 0.06 + 0.05 * handS;
-    const elbowY = sy - 0.1;
-    const eh = hit(s * 5, elbowY, 5, -s, 0, -1);
-    const elbowX = (eh ? eh.point.x : s * W * 0.45) + s * 0.11, elbowZ = (eh ? eh.point.z : W * 0.45) + 0.11;
-    coverArms.add(makeTube([[sx, sy - armY, sz], [elbowX, elbowY - armY, elbowZ], [coverX, coverY - armY - 0.08 * handS, coverZ - 0.02]], 0.045, limb));
-    const coverHand = new THREE.Group();
-    coverHand.position.set(coverX, coverY - armY, coverZ);
-    coverHand.rotation.set(0, s * 0.3, s * 0.2);
-    coverHand.scale.setScalar(handS);
-    const coverPalm = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 10), skin);
-    coverPalm.scale.set(1, 1.15, 0.6);
-    coverPalm.castShadow = true;
-    coverHand.add(coverPalm);
-    for (let i = -1; i <= 1; i++) {
-      const f = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 6), skin);
-      f.position.set(i * 0.05, 0.095 - Math.abs(i) * 0.02, 0);
-      f.scale.set(1, 1.6, 0.8);
-      coverHand.add(f);
-    }
-    coverArms.add(coverHand);
+    cover.push(new THREE.Vector3(coverX, coverY - legLen, (front > -Infinity ? front : W * 0.45) + palmT + 0.04));
   }
+  // 합장: 얼굴(몸통 높이의 50~78%)을 가리지 않도록 그 아래 가슴 앞
+  const prayY = legLen + H * 0.34;
+  const chestHit = hit(0, prayY, 5, 0, 0, -1);
+  const chest = new THREE.Vector3(0, prayY - legLen, (chestHit ? chestHit.point.z : W * 0.45) + palmT + 0.12);
+  const topHit = hit(0, 5, 0.05, 0, -1, 0);
+  const headTop = new THREE.Vector3(0, (topHit ? topHit.point.y : legLen + H) - legLen + 0.02, 0.05);
+
+  const rig = buildRig(
+    [
+      { a: armLen / 2, b: armLen / 2, r: 0.045, tip: handGeometry(handS, -1) },
+      { a: armLen / 2, b: armLen / 2, r: 0.045, tip: handGeometry(handS, 1) },
+      { a: legLength / 2, b: legLength / 2, r: legR[0], tip: footGeometry(footR[0]) },
+      { a: legLength / 2, b: legLength / 2, r: legR[1], tip: footGeometry(footR[1]) },
+    ],
+    limb, [skin, skin, limb, limb],
+    new THREE.Sphere(new THREE.Vector3(0, (legLen + H) / 2, 0), (legLen + H) / 2 + armLen + 0.4),
+  );
+  g.add(rig.mesh);
 
   const label = nameSprite(init.name, font);
   label.position.y = legLen + H + 0.85;
   g.add(label);
 
   // 앉을 때 내려가는 높이: 엉덩이와 몸 바닥 중 낮은 쪽이 땅 바로 위에 오도록
-  const sitDrop = Math.max(0, Math.min(legs[0].position.y, legs[1].position.y, legLen + geo.boundingBox!.min.y) - 0.06);
+  const sitDrop = Math.max(0, Math.min(hip[0].y, hip[1].y) + legLen + Math.min(0, geo.boundingBox!.min.y) - 0.06);
+  const dims: Dims = {
+    H, W, legLen, shoulder: [shoulder[0], shoulder[1]], hip: [hip[0], hip[1]], armLen, legLength, handS, palm, palmT, footY,
+    hang: [hang[0], hang[1]], chest, cover: [cover[0], cover[1]], headTop, eyeY: eyeY - legLen, eyeX, sitDrop, profile,
+  };
 
-  return {
-    g, body, mouth, legs, arms, prayArms, coverArms,
+  const ch: Blob = {
+    g, body, mouth, rig, dims, pose: makePose(),
     yaw: 0, state: "idle", stateT: 0, carrying: false, walk: 0, bob: 0, baseY: 0, prayK: 0,
+    moveK: 0, carryK: 0, bodyRy: 0,
     restK: 0, waveK: 0, joyK: 0, sadK: 0, joyH: 0, sitDrop,
-    holdPoint: new THREE.Vector3(0, legLen + H + 0.25, 0.05),
+    holdPoint: new THREE.Vector3(0, legLen + headTop.y, 0.05), holdR: 0.3, holdH: 0.2,
     idleWait: nextIdleWait(), idleKind: "swing", idleOn: false, idleT: 0, idleK: 0, idleArm: 0,
   };
+  animateBlob(ch, 0, false);
+  return ch;
 }
 
-const SIT_LEG = 1.47; // 앉았을 때 다리 각도. π/2보다 조금 작아서 발끝이 땅 쪽으로 내려온다
+const _M = new THREE.Matrix4(), _Mi = new THREE.Matrix4();
+const ARM_STRETCH = 1.5; // 손이 닿지 않으면 팔을 이만큼까지 늘인다(고무관)
+const _e = new THREE.Vector3(), _mid = new THREE.Vector3(), _tmp = new THREE.Vector3(), _grip = [new THREE.Vector3(), new THREE.Vector3()];
+const _root = new THREE.Vector3(), _tgt = new THREE.Vector3(), _pole = new THREE.Vector3(), _f = new THREE.Vector3(), _o = new THREE.Vector3();
 
 export function animateBlob(ch: Blob, dt: number, moving: boolean) {
   const blend = Math.min(1, dt * 6);
@@ -336,42 +288,19 @@ export function animateBlob(ch: Blob, dt: number, moving: boolean) {
   ch.waveK = lerp(ch.waveK, ch.state === "wave" ? 1 : 0, blend);
   ch.joyK = lerp(ch.joyK, ch.state === "joy" ? 1 : 0, Math.min(1, dt * 14));
   ch.sadK = lerp(ch.sadK, ch.state === "sad" ? 1 : 0, blend);
+  ch.prayK = lerp(ch.prayK, ch.state === "pray" ? 1 : 0, Math.min(1, dt * 7));
+  ch.moveK = lerp(ch.moveK, moving ? 1 : 0, Math.min(1, dt * 8));
+  ch.carryK = lerp(ch.carryK, ch.carrying ? 1 : 0, Math.min(1, dt * 8));
   ch.walk = moving ? ch.walk + dt * 9 : lerp(ch.walk, Math.round(ch.walk / Math.PI) * Math.PI, 0.2);
-  const sw = moving ? 0.6 : 0.6 * Math.abs(Math.sin(ch.walk)) * 0.2;
-  ch.legs[0].rotation.x = lerp(Math.sin(ch.walk) * sw, -SIT_LEG, ch.restK);
-  ch.legs[1].rotation.x = lerp(-Math.sin(ch.walk) * sw, -SIT_LEG, ch.restK);
   ch.bob += dt;
-  const breathe = Math.sin(ch.bob * 2.2) * 0.012;
-  ch.body.scale.set(1 + breathe, 1 - breathe, 1 + breathe);
-  ch.g.position.y = ch.baseY + (moving ? Math.abs(Math.sin(ch.walk)) * 0.06 : 0);
   ch.stateT += dt;
-
-  const carry = ch.carrying;
-  let armZ = carry ? 2.3 : moving ? -0.1 + Math.sin(ch.walk) * 0.2 : -0.15;
-  let armX = carry ? -0.3 : moving ? Math.sin(ch.walk) * 0.4 : 0;
-  let crouch = 0;
-  if (ch.state === "pickup") {
-    const k = Math.sin(Math.min(1, ch.stateT / 0.45) * Math.PI);
-    crouch = k * 0.28; armZ = -0.15 + 0.6 * k; armX = 1.1 * k;
-  }
-  if (ch.state === "place") {
-    const k = Math.sin(Math.min(1, ch.stateT / 0.5) * Math.PI);
-    armZ = 2.3 - 1.6 * k; armX = -0.3 - 0.9 * k;
-  }
-
   // 기쁨: 1.8초에 3번 콩콩콩. 도중에 끊기면 공중에서 부드럽게 내려온다
   ch.joyH = ch.state === "joy"
     ? 0.4 * Math.abs(Math.sin(Math.PI * 3 * Math.min(1, ch.stateT / REACTION_SECONDS.joy)))
     : lerp(ch.joyH, 0, Math.min(1, dt * 10));
-  const jump = ch.joyH / 0.4;
-  armZ = lerp(lerp(armZ, 2 + 0.35 * jump, ch.joyK), -0.3, ch.restK);
-  armX = lerp(lerp(armX, -0.2, ch.joyK), -0.1, ch.restK);
-  // 인사: 오른팔(arms[0])만 머리 옆에서 좌우로. 2.4초에 정확히 3번 왕복
-  ch.arms[0].rotation.set(lerp(armX, 0, ch.waveK), 0, -lerp(armZ, 2 + 0.4 * Math.sin(ch.stateT * Math.PI * 2.5), ch.waveK));
-  ch.arms[1].rotation.set(armX, 0, armZ);
 
   // 멍하니 서 있으면 가끔 작은 행동을 한다. 움직이거나 다른 동작을 시작하면 바로 멈춘다
-  if (moving || carry || ch.state !== "idle") {
+  if (moving || ch.carrying || ch.state !== "idle") {
     ch.idleOn = false;
     ch.idleWait = nextIdleWait();
   } else if (ch.idleOn) {
@@ -384,49 +313,65 @@ export function animateBlob(ch: Blob, dt: number, moving: boolean) {
   }
   ch.idleT += dt;
   ch.idleK = lerp(ch.idleK, ch.idleOn ? 1 : 0, Math.min(1, dt * 4));
-  const idle = ch.idleK > 0.001 ? ch.idleK : 0, idleT = ch.idleT;
-  let lookY = 0, swayZ = 0, stretchY = 0;
-  if (idle) {
-    if (ch.idleKind === "swing") {
-      const arm = ch.arms[ch.idleArm];
-      arm.rotation.x += idle * Math.sin(idleT * 3.4) * 0.35;
-      arm.rotation.z += idle * (ch.idleArm ? 0.4 : -0.4);
-    } else if (ch.idleKind === "look") {
-      lookY = idle * Math.sin(idleT * 1.9) * 0.24;
-    } else if (ch.idleKind === "sway") {
-      swayZ = idle * Math.sin(idleT * 2.1) * 0.06;
-    } else {
-      const lift = idle * Math.sin((Math.min(idleT, IDLE_ACTIONS.stretch) / IDLE_ACTIONS.stretch) * Math.PI);
-      ch.arms[0].rotation.z -= lift * 0.9;
-      ch.arms[1].rotation.z += lift * 0.9;
-      stretchY = lift * 0.035;
-    }
+
+  // 자세를 겹겹이 섞는다
+  const P = ch.pose, d = ch.dims;
+  walkPose(P, d, ch);
+  handPose(P, d, ch);
+  reactionPose(P, d, ch, dt);
+  prayPose(P, d, ch);
+  idlePose(P, d, ch);
+
+  // 몸: 숨쉬기 + 자세
+  const b = P.body, breathe = Math.sin(ch.bob * 2.2) * 0.012;
+  ch.bodyRy = dt ? lerp(ch.bodyRy, b.ry, Math.min(1, dt * 10)) : b.ry;
+  ch.body.position.y = d.legLen + b.y;
+  ch.body.rotation.set(b.rx, ch.bodyRy, b.rz);
+  ch.body.scale.set(b.sx * (1 + breathe), b.sy * (1 - breathe), b.sz * (1 + breathe));
+  ch.g.position.y = ch.baseY + P.lift;
+  ch.body.updateMatrix();
+  _M.copy(ch.body.matrix);
+  _Mi.copy(_M).invert();
+
+  // 다리: 발목 목표는 땅 아래로 내려가지 않게
+  for (let i = 0; i < 2; i++) {
+    const f = P.feet[i], l = ch.rig.legs[i];
+    _root.copy(d.hip[i]).applyMatrix4(_M);
+    f.p.resolve(_M, _tgt);
+    if (_tgt.y < d.footY * 0.9) _tgt.y = d.footY * 0.9;
+    solve(l, _root, _tgt, f.pole.resolveDir(_M, _pole), 1.1);
+    orientFoot(l, f.pitch);
+  }
+  // 팔: 손바닥 가운데를 몸 밖으로 밀고, 손끝 방향을 따라 손목 자리를 구한다
+  for (let i = 0; i < 2; i++) {
+    const h = P.hands[i], l = ch.rig.arms[i];
+    _root.copy(d.shoulder[i]).applyMatrix4(_M);
+    h.p.resolve(_M, _tgt).applyMatrix4(_Mi);
+    pushOut(d.profile, _tgt, d.palmT + 0.02).applyMatrix4(_M);
+    h.f.resolveDir(_M, _f).normalize();
+    h.o.resolveDir(_M, _o);
+    _tgt.addScaledVector(_f, -d.palm);
+    h.pole.resolveDir(_M, _pole);
+    solve(l, _root, _tgt, _pole, ARM_STRETCH);
+    // 팔꿈치나 아래팔 가운데가 몸속이면 팔꿈치를 몸 밖으로 밀어낸 쪽을 pole로 삼아 다시 푼다
+    _e.copy(l.low.position).applyMatrix4(_Mi);
+    _mid.copy(l.low.position).add(l.end.position).multiplyScalar(0.5).applyMatrix4(_Mi);
+    pushOut(d.profile, _e, 0.07).sub(_mid).add(pushOut(d.profile, _tmp.copy(_mid), 0.07));
+    _mid.copy(l.low.position).add(_root).multiplyScalar(0.5).applyMatrix4(_Mi); // 위팔 가운데도
+    _e.sub(_mid).add(pushOut(d.profile, _tmp.copy(_mid), 0.07)).applyMatrix4(_M);
+    if (_e.distanceToSquared(l.low.position) > 1e-6) solve(l, _root, _tgt, _pole.subVectors(_e, _root), ARM_STRETCH);
+    orientHand(l, _f, _o);
+    _grip[i].copy(_f).multiplyScalar(d.palm).add(l.end.position);
+  }
+  // 돌: 평소엔 머리 위, 쥐고 있을 땐 두 손바닥 사이(돌 가운데 → 바닥)
+  P.hold.resolve(_M, ch.holdPoint);
+  if (P.grip > 1e-3) {
+    _tmp.copy(_grip[0]).add(_grip[1]).multiplyScalar(0.5);
+    _tmp.y -= ch.holdH / 2;
+    ch.holdPoint.lerp(_tmp, Math.min(1, P.grip));
   }
 
-  // 합장: 손을 가슴 앞에 모으고 살짝 고개를 숙인다
-  ch.prayK = lerp(ch.prayK, ch.state === "pray" ? 1 : 0, Math.min(1, dt * 7));
-  const praying = ch.prayK > 0.3;
-  ch.prayArms.visible = praying;
-  // 슬픔: 평소 팔 대신 얼굴을 감싸는 팔을 켠다
-  const covering = ch.sadK > 0.3;
-  ch.coverArms.visible = covering;
-  ch.coverArms.rotation.x = (1 - ch.sadK) * 0.8;
-  ch.arms[0].visible = ch.arms[1].visible = !praying && !covering;
-  // 합장(앞으로), 앉기(뒤로), 슬픔(앞으로)을 더한다
-  ch.body.rotation.x = 0.14 * ch.prayK - 0.18 * ch.restK + 0.2 * ch.sadK;
-  // 3초에 3번 왕복. lerp의 지연으로 실제 진폭은 약 0.36
-  ch.body.rotation.y = lerp(ch.body.rotation.y, ch.state === "sad" ? 0.42 * Math.sin(ch.stateT * Math.PI * 2) : lookY, Math.min(1, dt * 10));
-  ch.body.rotation.z = swayZ;
-
-  ch.body.scale.y *= (1 - crouch) * (1 + stretchY);
-  ch.g.position.y -= crouch * 0.15;
-  // 착지 때 납작하게, 뛸 때 길게
-  const stretch = ch.joyK * (0.1 * jump - 0.16 * Math.pow(1 - jump, 4));
-  ch.body.scale.y *= 1 + stretch;
-  ch.body.scale.x *= 1 - stretch * 0.5;
-  ch.body.scale.z *= 1 - stretch * 0.5;
-  // 다리 각도에 맞춰 내려가서 앉고 일어나는 동안 발이 땅을 뚫지 않는다
-  ch.g.position.y += ch.joyH - ch.sitDrop * (1 - Math.cos(ch.restK * SIT_LEG)) / (1 - Math.cos(SIT_LEG));
+  const carry = ch.carrying;
   const mouthY = lerp(lerp(carry ? 0.45 : ch.state === "pickup" ? 1.3 : 1, 1.7, ch.joyK), 0.55, ch.sadK);
   ch.mouth.scale.set(1 + 0.3 * ch.joyK - 0.35 * ch.sadK, mouthY, 1);
   ch.g.rotation.y = ch.yaw;

@@ -653,9 +653,10 @@ export class Game {
         const b = this.holderBlob(v.row.holder_id);
         m.visible = !!b && b.g.visible;
         if (b) {
+          b.holdR = v.row.radius; b.holdH = v.row.height;
           const hp = b.holdPoint.clone().applyAxisAngle(UP, b.yaw).add(b.g.position);
           hp.y += v.row.height / 2;
-          m.position.lerp(hp, 0.35);
+          m.position.lerp(hp, 1 - Math.exp(-dt * 30)); // 손을 바짝 따라간다(프레임률과 무관)
         }
         continue;
       }
