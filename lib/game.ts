@@ -28,7 +28,7 @@ type StoneView = {
   from: THREE.Vector3 | null; to: THREE.Vector3; t: number; dur: number; arc: number;
   grow: number; dying: boolean; landSound?: boolean;
 };
-type TowerView = { row: TowerRow; label: TowerLabel; top: number; stage: 0 | 1 | 2; shown: 0 | 1 | 2; alpha: number; labelK: number }; // stage: 0 안 보임, 1 「…」, 2 내용
+type TowerView = { row: TowerRow; label: TowerLabel; top: number; stage: 0 | 1 | 2; shown: 0 | 1 | 2; alpha: number; labelK: number; pop: number; popFrom: number }; // stage: 0 안 보임, 1 「…」, 2 내용
 type Remote = { blob: Blob; target: THREE.Vector3; targetYaw: number; moving: boolean; seen: boolean; prayUntil: number; lastX: number; lastZ: number; splashD: number };
 type Floater = { sprite: THREE.Sprite; t: number };
 
@@ -40,7 +40,8 @@ const FOG_GROUND = [48, 150, 260], FOG_TOP = [110, 300, 320];
 // 탑 푯말: 가까이(LABEL_NEAR 안)는 내용 전체, 조금 떨어지면 「…」, 멀면 안 보인다.
 // 나타나는 거리와 사라지는 거리를 달리 둬 경계에서 깜빡이지 않게 한다. 내 탑도 같은 규칙이다
 const LABEL_NEAR = 2, LABEL_NEAR_OUT = 2.5, LABEL_FAR = 12, LABEL_FAR_OUT = 13;
-const LABEL_FADE = 0.18;
+const LABEL_POP = 0.14; // 푯말이 나타나거나 모습이 바뀔 때 살짝 커지며 또렷해지는 시간(초)
+const LABEL_HIDE = 0.12; // 멀어져 사라지는 시간(초)
 // 시야각(도). 가로 화면은 세로 시야각 FOV_MIN을 쓰고, 화면이 좁아질수록(휴대폰 세로) 가로로 FOV_WIDE만큼 보이도록
 // 세로 시야각을 넓힌다. 너무 넓으면 가장자리가 늘어나 보여 FOV_MAX에서 멈춘다
 const FOV_MIN = 50, FOV_WIDE = 60, FOV_MAX = 76;
@@ -227,7 +228,7 @@ export class Game {
     if (!t) {
       const label = new TowerLabel(this.font);
       this.root.add(label.sprite);
-      t = { row, label, top: groundAt(row.x, row.z), stage: 0, shown: 0, alpha: 0, labelK: 1 };
+      t = { row, label, top: groundAt(row.x, row.z), stage: 0, shown: 0, alpha: 0, labelK: 1, pop: 1, popFrom: 0 };
       label.setOpacity(0);
       this.towers.set(row.id, t);
       this.restack(row.id);
@@ -703,13 +704,19 @@ export class Game {
       const mine = t.row.owner_id === this.net.uid;
       const dist = Math.hypot(t.row.x - p.x, t.row.z - p.z);
       t.stage = t === open || (t === this.hovered && t.stage) ? 2 : dist < (t.stage ? LABEL_FAR_OUT : LABEL_FAR) ? 1 : 0;
-      // 보이는 단계가 바뀌면 먼저 흐려져 사라진 뒤 새 모습으로 나타난다
-      if (t.shown !== t.stage) {
-        t.alpha -= dt / LABEL_FADE;
-        if (t.alpha <= 0) { t.alpha = 0; t.shown = t.stage; }
-      } else if (t.shown) t.alpha = Math.min(1, t.alpha + dt / LABEL_FADE);
+      // 모습이 바뀌면 곧바로 새 모습으로 바꾸고 살짝 커지며 또렷해진다. 사라질 때만 짧게 흐려진다
+      let grow = 1;
+      if (t.stage === 0) {
+        if (t.shown) { t.alpha -= dt / LABEL_HIDE; if (t.alpha <= 0) { t.alpha = 0; t.shown = 0; } }
+      } else {
+        if (t.shown !== t.stage) { t.popFrom = t.shown ? Math.min(t.alpha, 0.6) : 0; t.shown = t.stage; t.pop = 0; }
+        t.pop = Math.min(1, t.pop + dt / LABEL_POP);
+        const e = 1 - (1 - t.pop) ** 3; // 처음엔 빠르고 끝에서 부드럽게 멈춘다
+        t.alpha = t.popFrom + (1 - t.popFrom) * e;
+        grow = 0.9 + 0.1 * e;
+      }
       t.label.setOpacity(t.alpha);
-      t.label.setSize(t.labelK * this.labelScale);
+      t.label.setSize(t.labelK * this.labelScale * grow);
       t.label.sprite.position.set(t.row.x, t.top + 0.3, t.row.z);
       if (!t.shown) continue;
       if (t.shown === 1) { t.label.setBrief(mine); continue; }
