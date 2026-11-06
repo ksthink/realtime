@@ -673,10 +673,27 @@ export class Game {
 
   private labelT = 0;
   private labelScale = 1;
+  hover: { x: number; y: number } | null = null; // PC 마우스 위치(-1~1). 그 아래 「…」 푯말은 내용을 펼친다
+  private hovered: TowerView | null = null;
+
+  // 마우스 아래에 보이는 푯말이 있는 탑. 펼쳐진 푯말은 더 크므로 마우스가 그 안에 있는 동안 유지된다
+  private hoverTower(): TowerView | null {
+    if (!this.hover || this.inputLocked || this.camMode !== 0) return null;
+    this.ray.setFromCamera(new THREE.Vector2(this.hover.x, this.hover.y), this.camera);
+    let best: TowerView | null = null, bestD = Infinity;
+    // 단계가 바뀌며 잠깐 투명해진 푯말도 센다. 그러지 않으면 펼치는 순간 놓쳐 접혔다 펼쳤다 반복한다
+    for (const t of this.towers.values()) {
+      if (!t.shown) continue;
+      const hit = this.ray.intersectObject(t.label.sprite)[0];
+      if (hit?.uv && hit.distance < bestD && t.label.contains(hit.uv)) { best = t; bestD = hit.distance; }
+    }
+    return best;
+  }
   private updateTowers(dt: number) {
     const now = Date.now();
     const p = this.me.g.position;
-    // 내용을 펼치는 탑은 가까운 탑 하나뿐이다. 이미 펼친 탑은 조금 더 멀어질 때까지 유지한다
+    this.hovered = this.hoverTower();
+    // 내용을 펼치는 탑은 가까운 탑 하나와 마우스를 올린 탑뿐이다. 이미 펼친 탑은 조금 더 멀어질 때까지 유지한다
     let open: TowerView | null = null, openD = Infinity;
     for (const t of this.towers.values()) {
       const d = Math.hypot(t.row.x - p.x, t.row.z - p.z);
@@ -685,7 +702,7 @@ export class Game {
     for (const t of this.towers.values()) {
       const mine = t.row.owner_id === this.net.uid;
       const dist = Math.hypot(t.row.x - p.x, t.row.z - p.z);
-      t.stage = t === open ? 2 : dist < (t.stage ? LABEL_FAR_OUT : LABEL_FAR) ? 1 : 0;
+      t.stage = t === open || (t === this.hovered && t.stage) ? 2 : dist < (t.stage ? LABEL_FAR_OUT : LABEL_FAR) ? 1 : 0;
       // 보이는 단계가 바뀌면 먼저 흐려져 사라진 뒤 새 모습으로 나타난다
       if (t.shown !== t.stage) {
         t.alpha -= dt / LABEL_FADE;

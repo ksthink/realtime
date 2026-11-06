@@ -52,6 +52,11 @@ function Scene({ onGame, db, me, font, start }: { onGame(g: Game | null): void; 
     let drag: { id: number; x: number; y: number; moved: number } | null = null;
     const down = (e: PointerEvent) => { drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0 }; el.setPointerCapture(e.pointerId); };
     const move = (e: PointerEvent) => {
+      // 마우스를 올린 「…」 푯말은 내용을 펼친다(드래그 중이 아닐 때만)
+      if (e.pointerType === "mouse" && !drag) {
+        const r = el.getBoundingClientRect();
+        g.hover = { x: ((e.clientX - r.left) / r.width) * 2 - 1, y: -((e.clientY - r.top) / r.height) * 2 + 1 };
+      }
       if (!drag || e.pointerId !== drag.id) return;
       drag.moved += Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
       g.orbit(e.clientX - drag.x, e.clientY - drag.y);
@@ -65,17 +70,20 @@ function Scene({ onGame, db, me, font, start }: { onGame(g: Game | null): void; 
       }
       drag = null;
     };
+    const leave = () => { g.hover = null; };
     const wheel = (e: WheelEvent) => g.zoom(e.deltaY);
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
+    el.addEventListener("pointerleave", leave);
     el.addEventListener("wheel", wheel, { passive: true });
     return () => {
       el.removeEventListener("pointerdown", down);
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);
+      el.removeEventListener("pointerleave", leave);
       el.removeEventListener("wheel", wheel);
       g.dispose();
       game.current = null;
