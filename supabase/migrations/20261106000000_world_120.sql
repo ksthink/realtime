@@ -1,4 +1,5 @@
--- 걸을 수 있는 반경을 80m에서 120m로 넓힌다. 기존 탑·돌·생성 지점은 그대로 둔다.
+-- 걸을 수 있는 반경을 80m에서 120m로 넓힌다. 기존 탑과 돌은 그대로 둔다.
+-- 생성 지점은 바깥 고리에 더하고, 동산 비탈·계단 자리의 것은 뺀다. 여러 번 실행해도 결과가 같다.
 
 -- 내려놓기 허용 반경 80 → 120 (lib/terrain.ts WORLD와 일치)
 create or replace function public.drop_stone(p_stone uuid, p_x double precision, p_z double precision) returns jsonb
@@ -111,7 +112,7 @@ begin
   return jsonb_build_object('result', 'collapsed');
 end $$;
 
--- 바닥 돌 240 → 490: 생성 지점이 3000 → 6151개로 늘어난 만큼 늘려 기존 땅의 돌 밀도를 유지한다
+-- 바닥 돌 240 → 490: 생성 지점이 3000 → 5897개로 늘어난 만큼 늘린다(기존 땅은 약 4% 촘촘해진다)
 create or replace function public.world_tick() returns void
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -146,7 +147,8 @@ begin
 end $$;
 
 -- 바깥 고리(70~110m) 생성 지점: npx tsx scripts/gen-spawn-points.ts ring 이 생성함
-insert into public.spawn_points (x, z) values
+insert into public.spawn_points (x, z)
+select v.x, v.z from (values
 (92.59,-7.00),
 (29.42,83.68),
 (-52.64,72.59),
@@ -3297,7 +3299,9 @@ insert into public.spawn_points (x, z) values
 (18.19,-97.93),
 (-73.29,-76.29),
 (70.41,51.85),
-(-58.56,-80.56);
+(-58.56,-80.56)
+) v(x, z)
+where not exists (select 1 from public.spawn_points s where s.x = v.x and s.z = v.z);
 
 -- 동산(lib/terrain.ts HILL)의 비탈·계단·나무 밑동에 있는 생성 지점을 뺀다. 비탈은 걸을 수 없어 그곳 돌은 주울 수 없다.
 -- 좌표는 scripts로 hillBlocked와 계단 폭 1.2m로 골랐다. 꼭대기 평지의 지점은 남긴다

@@ -41,16 +41,25 @@ const BRIDGES = [
 
 // 동산: 꼭대기(plateauR 안)가 topY로 평평한 언덕. stairs는 꼭대기에서 계단이 뻗는 방향(라디안).
 // 반경 r 밖에서는 땅이 그대로이고, 비탈은 계단으로만 오르내린다
-export const HILL = { x: 28, z: -12, r: 18, plateauR: 6.5, topY: 7.5, stairs: [2.74, -0.4], stairHalf: 0.55 };
-// 비탈은 부드럽게 오르고, 계단 길은 고른 경사로 곧게 오른다. 길 옆 1.6~3.4m에서 둘을 섞는다
+export const HILL = { x: 28, z: -12, r: 18, plateauR: 6.5, topY: 7.5, stairs: [2.74, -0.4], stairHalf: 0.6 };
+// 계단: 디딤판 깊이·반폭, 가운데 줄에서 난간까지, 디딤판 밑 땅을 그릴 때 낮추는 깊이. 디딤판은 꼭대기 가장자리 0.3m 안쪽에서 시작한다
+export const STAIR = { tread: 0.22, half: 1.3, rail: 1.4, dip: 0.14, d0: HILL.plateauR - 0.3 };
+const STAIR_END = Math.floor((HILL.r - 0.7 - STAIR.d0) / STAIR.tread) * STAIR.tread + STAIR.d0; // 마지막 디딤판 앞 끝
+// 계단 길 높이(0~1): 고른 경사로 오르고 양 끝 1.2m쯤은 둥글게 꺾어 땅 격자에서 모서리가 뭉개지지 않게 한다
+const EASE = 0.11;
+const stairLine = (t: number) => {
+  const v = 1 / (1 - EASE);
+  return t < EASE ? (v * t * t) / (2 * EASE) : t > 1 - EASE ? 1 - (v * (1 - t) * (1 - t)) / (2 * EASE) : v * (t - EASE / 2);
+};
+// 비탈은 부드럽게 오르고, 계단 길은 고르게 올라 마지막 디딤판에서 땅에 닿는다. 길 옆 2.2~4m에서 둘을 섞는다
 const hillW = (x: number, z: number) => {
-  const dx = x - HILL.x, dz = z - HILL.z;
-  const t = clamp((HILL.r - Math.hypot(dx, dz)) / (HILL.r - HILL.plateauR), 0, 1);
+  const dx = x - HILL.x, dz = z - HILL.z, d = Math.hypot(dx, dz);
+  const t = clamp((HILL.r - d) / (HILL.r - HILL.plateauR), 0, 1), line = stairLine(clamp((STAIR_END - d) / (STAIR_END - HILL.plateauR), 0, 1));
   let w = t * t * (3 - 2 * t);
   for (const a of HILL.stairs) {
     if (dx * Math.cos(a) + dz * Math.sin(a) <= 0) continue;
-    const k = clamp((Math.abs(dz * Math.cos(a) - dx * Math.sin(a)) - 1.6) / 1.8, 0, 1);
-    w += (t - w) * (1 - k * k * (3 - 2 * k));
+    const k = clamp((Math.abs(dz * Math.cos(a) - dx * Math.sin(a)) - 2.2) / 1.8, 0, 1);
+    w += (line - w) * (1 - k * k * (3 - 2 * k));
   }
   return w;
 };
@@ -71,14 +80,76 @@ export function terrainY(x: number, z: number) {
   const h = baseTerrainY(x, z), w = hillW(x, z);
   return w > 0 ? h + (HILL.topY - h) * w : h;
 }
-// 동산 비탈과 꼭대기 나무 밑동이면 true. 꼭대기 울타리 안, 계단 위, 높이가 거의 없는 산자락은 걸을 수 있다
+// 동산 비탈과 꼭대기 나무 밑동이면 true. 꼭대기 울타리 안, 계단 위, 높이가 거의 없는 산자락은 걸을 수 있다.
+// 몸통(중심에서 0.73m)이 나무·울타리·난간을 뚫지 않게 그만큼 안쪽에서 막는다
 export function hillBlocked(x: number, z: number) {
   const dx = x - HILL.x, dz = z - HILL.z, d = Math.hypot(dx, dz);
-  if (d < 1.1) return true;
-  if (d < HILL.plateauR - 0.45 || hillW(x, z) < 0.06) return false;
+  if (d < 1.45) return true;
+  if (d < HILL.plateauR - 0.75 || hillW(x, z) < 0.06) return false;
   return !HILL.stairs.some((a) => dx * Math.cos(a) + dz * Math.sin(a) > 0 && Math.abs(dz * Math.cos(a) - dx * Math.sin(a)) < HILL.stairHalf);
 }
 export const isWater = (x: number, z: number) => terrainY(x, z) < WATER_Y + 0.12;
+
+const stairFrame = (x: number, z: number, a: number) => {
+  const dx = x - HILL.x, dz = z - HILL.z;
+  return { along: dx * Math.cos(a) + dz * Math.sin(a), lat: dz * Math.cos(a) - dx * Math.sin(a) };
+};
+const stairAt = (a: number, along: number, lat: number) => [HILL.x + Math.cos(a) * along - Math.sin(a) * lat, HILL.z + Math.sin(a) * along + Math.cos(a) * lat] as const;
+// 디딤판 밑 땅은 그려지는 높이를 조금 낮춰 풀이 판을 뚫고 나오지 않게 한다. 계단 발치에서는 땅과 같아진다
+export function stairDip(x: number, z: number) {
+  let k = 0;
+  for (const a of HILL.stairs) {
+    const { along, lat } = stairFrame(x, z, a);
+    if (along < HILL.plateauR - 0.4 || along > STAIR_END) continue;
+    const ends = clamp((along - HILL.plateauR + 0.4) / 0.7, 0, 1) * clamp((STAIR_END - along) / 1.2, 0, 1);
+    const side = 1 - clamp((Math.abs(lat) - STAIR.half - 0.1) / 1.2, 0, 1);
+    k = Math.max(k, ends * side * side * (3 - 2 * side));
+  }
+  return STAIR.dip * k;
+}
+// 계단마다 디딤판 윗면 높이. 가운데 땅보다 살짝 위, 옆으로 기운 땅도 덮는다
+export const TREADS = HILL.stairs.map((a) => {
+  const n = Math.round((STAIR_END - STAIR.d0) / STAIR.tread), tops: number[] = [];
+  const g = (along: number, lat: number) => { const [x, z] = stairAt(a, along, lat); return terrainY(x, z) - stairDip(x, z); };
+  for (let i = 0; i < n; i++) {
+    const d = STAIR.d0 + STAIR.tread * (i + 0.5), back = d - STAIR.tread / 2;
+    tops.push(Math.max(terrainY(...stairAt(a, d, 0)) + 0.02, g(back, -STAIR.half) + 0.09, g(back, STAIR.half) + 0.09));
+  }
+  return tops;
+});
+// 디딤판 위면 그 높이, 아니면 null. 턱 근처와 판 옆 가장자리에서는 부드럽게 넘어가고, 처음과 끝은 땅과 잇는다
+function treadY(x: number, z: number) {
+  const ease = (u: number) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
+  for (let s = 0; s < HILL.stairs.length; s++) {
+    const { along, lat } = stairFrame(x, z, HILL.stairs[s]), tops = TREADS[s], last = tops.length - 1;
+    if (Math.abs(lat) > STAIR.half || along < STAIR.d0 || along > STAIR_END + STAIR.tread) continue;
+    const ground = terrainY(x, z) - stairDip(x, z), f = (along - STAIR.d0) / STAIR.tread - 0.5, i = Math.floor(f);
+    const y = i < 0 ? ground + (tops[0] - ground) * ease((f + 0.45) / 0.4)
+      : i >= last ? tops[last] + (ground - tops[last]) * ease((f - last - 0.1) / 1.4) // 마지막 판에서 땅으로는 조금 길게 내려선다
+      : tops[i] + (tops[i + 1] - tops[i]) * ease((f - i - 0.1) / 0.8);
+    return y + (ground - y) * ease((Math.abs(lat) - STAIR.half + 0.25) / 0.25);
+  }
+  return null;
+}
+// 계단 디딤판이나 그 둘레(땅을 낮춘 곳)면 true. 돌을 놓지 않는다
+export const onStairs = (x: number, z: number) => stairDip(x, z) > 0 || treadY(x, z) !== null;
+
+// 얕은 물웅덩이(가장 깊은 곳 0.51m 이하, 강·호수는 0.96m 이상). 이 원 안의 물은 걸어서 지나갈 수 있다.
+// [x, z, 반경] — 지형을 바꾸면 물의 덩어리별 최대 깊이로 다시 골라야 한다
+const PUDDLES = [
+  [-91.5, -13.3, 1.5], [-87.2, -50.3, 2.6], [-84.3, -15.6, 2.3], [-75.4, -3.3, 1.7], [-56.3, -18.0, 10.5], [-50.1, -76.9, 3.5],
+  [-43.0, -54.6, 3.7], [-25.4, 91.7, 5.5], [-17.5, 20.7, 2.5], [6.2, 102.6, 14.4], [11.5, 90.8, 2.5], [28.4, 106.1, 1.0],
+  [52.0, -93.9, 13.2], [56.5, -19.1, 6.5], [73.7, -71.5, 13.8], [88.3, -50.6, 0.7], [92.8, -44.5, 3.8], [102.2, -45.5, 12.5],
+];
+export const inPuddle = (x: number, z: number) => isWater(x, z) && PUDDLES.some(([px, pz, r]) => (x - px) ** 2 + (z - pz) ** 2 < r * r);
+// 캐릭터가 딛는 높이. 웅덩이에서는 발목만 잠기게 물 바닥 대신 수면 바로 아래를 딛는다
+// 계단에서는 디딤판을, 계단 둘레에서는 낮춰 그린 땅을 딛는다
+export const walkY = (x: number, z: number) => {
+  const t = treadY(x, z);
+  if (t !== null) return t;
+  const y = terrainY(x, z);
+  return y < WATER_Y - 0.1 && inPuddle(x, z) ? WATER_Y - 0.1 : y - stairDip(x, z);
+};
 
 // 가장 가까운 물까지의 대략적인 거리(미터). 주변을 고리 모양으로 살핀다. 범위 안에 없으면 Infinity
 export function waterDistance(x: number, z: number, range = 24) {

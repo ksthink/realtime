@@ -3,10 +3,11 @@ import type { CharacterRow, DropResult, NetEvents, Pose, StoneRow, TowerRow } fr
 import { Net } from "./net";
 import { formatLife, MAX_STONES, PICK_RANGE, PRAY_COOLDOWN_MS, PRAY_RANGE, STACK_RADIUS, TOWER_GAP, WISH_AT } from "./rules";
 import { playDrop, playPick, playStep, setWaterDistance, stopSound, stopStep } from "./sound";
-import { HILL, WORLD, clamp, hillBlocked, isWater, lerp, terrainY, waterDistance } from "./terrain";
+import { HILL, WORLD, clamp, hillBlocked, inPuddle, isWater, lerp, onStairs, terrainY, walkY, waterDistance } from "./terrain";
 import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
 import { makePetals } from "./three/petals";
+import { makeSplash } from "./three/splash";
 import { makePickGlow, makeStoneMesh } from "./three/stone";
 import { buildWorld } from "./three/world";
 import { seeThrough } from "./three/bigtree";
@@ -27,7 +28,7 @@ type StoneView = {
   grow: number; dying: boolean; landSound?: boolean;
 };
 type TowerView = { row: TowerRow; label: TowerLabel; top: number };
-type Remote = { blob: Blob; target: THREE.Vector3; targetYaw: number; moving: boolean; seen: boolean; prayUntil: number };
+type Remote = { blob: Blob; target: THREE.Vector3; targetYaw: number; moving: boolean; seen: boolean; prayUntil: number; lastX: number; lastZ: number; splashD: number };
 type Floater = { sprite: THREE.Sprite; t: number };
 
 const CAMS = ["따라가기", "하늘에서"];
@@ -80,6 +81,7 @@ export class Game {
   private pickTarget: StoneView | null = null;
   private glow = makePickGlow();
   private petals = makePetals();
+  private splash = makeSplash();
   private world: ReturnType<typeof buildWorld>;
   private glowOn: StoneView | null = null;
   private glowK = 0;
@@ -107,7 +109,7 @@ export class Game {
     this.sun.shadow.bias = -0.0008;
     this.root.add(this.sun, this.sun.target);
     this.world = buildWorld(this.root);
-    this.root.add(this.petals.points);
+    this.root.add(this.petals.points, this.splash.group);
 
     this.me = this.makeAvatar(meRow);
     const a = Math.random() * Math.PI * 2;
@@ -116,7 +118,7 @@ export class Game {
       this.me.g.position.set(start.x, 0, start.z);
       this.me.yaw = start.yaw;
     }
-    this.me.baseY = terrainY(this.me.g.position.x, this.me.g.position.z);
+    this.me.baseY = walkY(this.me.g.position.x, this.me.g.position.z);
 
     this.root.add(this.glow.group);
 
@@ -249,7 +251,7 @@ export class Game {
         if (!c || this.remotes.has(id)) return;
         const blob = this.makeAvatar(c);
         blob.g.visible = false; // 첫 위치를 받기 전까지 숨긴다
-        this.remotes.set(id, { blob, target: new THREE.Vector3(), targetYaw: 0, moving: false, seen: false, prayUntil: 0 });
+        this.remotes.set(id, { blob, target: new THREE.Vector3(), targetYaw: 0, moving: false, seen: false, prayUntil: 0, lastX: 0, lastZ: 0, splashD: 0 });
       });
     }
     this.sendPoseNow(); // 새로 온 사람이 내 위치를 바로 알도록
@@ -354,8 +356,13 @@ export class Game {
     const x = p.x + Math.sin(this.me.yaw) * 0.7, z = p.z + Math.cos(this.me.yaw) * 0.7;
     return !isWater(x, z) && !hillBlocked(x, z) && Math.hypot(x, z) < WORLD ? { x, z } : { x: p.x, z: p.z };
   }
+  // 계단 위에서는 돌이 디딤판에 묻히므로 놓지 않는다
+  private get onStairs() {
+    const p = this.me.g.position, d = this.dropPoint();
+    return onStairs(p.x, p.z) || onStairs(d.x, d.z);
+  }
   private dropKind(): HudState["dropKind"] {
-    if (!this.myHeld) return null;
+    if (!this.myHeld || this.onStairs) return null;
     const { x, z } = this.dropPoint();
     const mine = this.myTower;
     if (mine) {
@@ -440,6 +447,7 @@ export class Game {
   }
 
   private async drop(held: StoneView) {
+    if (this.onStairs) { this.toast("계단에서는 돌을 놓을 수 없어요"); return; }
     const { x, z } = this.dropPoint();
     this.me.state = "place"; this.me.stateT = 0;
     const r = await this.net.dropStone(held.row.id, x, z);
@@ -529,8 +537,9 @@ export class Game {
     this.updateCamera(dt);
     this.updatePoseSend(dt);
     const p = this.me.g.position;
-    this.world.update(dt);
+    this.world.update(dt, this.camera, this.scene.fog as THREE.Fog);
     this.petals.update(dt, p);
+    this.splash.update(dt);
     this.sun.position.copy(p).add(SUN_OFF);
     this.sun.target.position.copy(p);
     this.sun.target.updateMatrixWorld();
@@ -561,11 +570,14 @@ export class Game {
       me.yaw += Math.atan2(Math.sin(dy), Math.cos(dy)) * Math.min(1, dt * 12);
       moving = true;
     }
-    me.baseY = terrainY(me.g.position.x, me.g.position.z);
+    me.baseY = walkY(me.g.position.x, me.g.position.z);
     animateBlob(me, dt, moving);
-    // 발이 땅에 닿는 순간(걷기 위상이 π의 배수를 지날 때) 발소리를 낸다
+    // 발이 땅에 닿는 순간(걷기 위상이 π의 배수를 지날 때) 발소리를 낸다. 웅덩이에서는 물이 살짝 튄다
     const contact = Math.floor(me.walk / Math.PI);
-    if (moving && contact !== this.lastContact) playStep();
+    if (moving && contact !== this.lastContact) {
+      playStep();
+      this.splashAt(me);
+    }
     if (!moving && this.movingNow) stopStep();
     this.lastContact = contact;
     this.movingNow = moving;
@@ -576,6 +588,11 @@ export class Game {
     }
   }
   private movingNow = false;
+
+  private splashAt(b: Blob) {
+    const p = b.g.position;
+    if (inPuddle(p.x, p.z)) this.splash.emit(p.x, p.z, b.yaw);
+  }
 
   private updateRemotes(dt: number) {
     const k = 1 - Math.exp(-dt * 10); // 100ms 정도 뒤따라가는 보간
@@ -588,7 +605,11 @@ export class Game {
       p.z = lerp(p.z, r.target.z, k);
       const dy = r.targetYaw - b.yaw;
       b.yaw += Math.atan2(Math.sin(dy), Math.cos(dy)) * k;
-      b.baseY = terrainY(p.x, p.z);
+      b.baseY = walkY(p.x, p.z);
+      // 남의 발걸음은 이동 거리로 센다(걷기 위상은 내 것만 쓴다)
+      r.splashD += Math.hypot(p.x - r.lastX, p.z - r.lastZ);
+      r.lastX = p.x; r.lastZ = p.z;
+      if (r.splashD > 0.45) { r.splashD = 0; if (r.moving) this.splashAt(b); }
       if (b.state === "pray" && performance.now() > r.prayUntil) b.state = "idle";
       b.carrying = holders.has(id);
       animateBlob(b, dt, r.moving);
@@ -825,6 +846,7 @@ export class Game {
     stopSound();
     this.glow.dispose();
     this.petals.dispose();
+    this.splash.dispose();
     this.net.stop();
     this.scene.remove(this.root);
   }
@@ -837,7 +859,7 @@ const isReaction = (v: unknown): v is Reaction => (REACTIONS as readonly unknown
 function stepOnLand(p: THREE.Vector3, dir: THREE.Vector3, dist: number) {
   const tryMove = (dx: number, dz: number) => {
     const nx = p.x + dx, nz = p.z + dz;
-    if (Math.hypot(nx, nz) > WORLD || isWater(nx, nz) || hillBlocked(nx, nz)) return false;
+    if (Math.hypot(nx, nz) > WORLD || (isWater(nx, nz) && !inPuddle(nx, nz)) || hillBlocked(nx, nz)) return false;
     p.x = nx; p.z = nz;
     return true;
   };

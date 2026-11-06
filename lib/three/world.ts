@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { HILL, WATER_Y, WORLD, baseTerrainY, clamp, hillBlocked, rng, terrainY, vnoise } from "../terrain";
+import { HILL, STAIR, TREADS, WATER_Y, WORLD, baseTerrainY, clamp, hillBlocked, rng, stairDip, terrainY, vnoise } from "../terrain";
 import { buildBigTree } from "./bigtree";
 import { WIND_DIR } from "./petals";
 import { stoneGeometry } from "./stone";
@@ -23,13 +23,16 @@ vec2 windAt(vec2 p) {
 `;
 
 // 인스턴스 메시 재질의 정점 셰이더에 바람을 넣는다. body에서 wind(-1~1)로 transformed를 옮긴다
-function sway<M extends THREE.Material>(mat: M, time: { value: number }, key: string, body: string) {
+// fade를 주면 카메라에서 fade.x~fade.y m 사이에서 인스턴스를 줄여 없앤다(멀리 있는 작은 꽃)
+function sway<M extends THREE.Material>(mat: M, time: { value: number }, key: string, body: string, fade?: { value: THREE.Vector2 }) {
   mat.customProgramCacheKey = () => `wind-${key}`; // 없으면 소스가 같은 onBeforeCompile끼리 프로그램을 나눠 쓴다
   mat.onBeforeCompile = (s) => {
     s.uniforms.uWindTime = time;
-    s.vertexShader = WIND_GLSL + s.vertexShader.replace(
+    if (fade) s.uniforms.uFade = fade;
+    s.vertexShader = (fade ? "uniform vec2 uFade;\n" : "") + WIND_GLSL + s.vertexShader.replace(
       "#include <begin_vertex>",
       `#include <begin_vertex>
+      ${fade ? "transformed *= 1.0 - smoothstep(uFade.x, uFade.y, distance(cameraPosition, (modelMatrix * vec4(instanceMatrix[3].xyz, 1.0)).xyz));" : ""}
       vec2 wind = windAt(instanceMatrix[3].xz);
       ${body}`,
     );
@@ -41,6 +44,9 @@ type Item = { x: number; y: number; z: number; r: () => number; hide?: boolean }
 
 // 넓히기 전 반경. 그 안의 식생은 예전 자리와 모양 그대로 둔다
 const OLD_WORLD = 80;
+// 식생을 나누는 격자 칸(m). 인덱스가 많은 것은 잘게, 적은 것은 크게 나눠 그리기 호출을 줄인다.
+// 꽃은 안개 시작 거리 × FLOWER_FADE 사이에서 사라진다. 땅은 GROUND_CHUNK칸씩 나눈다
+const TILE = { trunk: 48, canopy: 24, bush: 32, flower: 24, rock: 48 }, FLOWER_FADE = [0.94, 1.35], GROUND_CHUNK = 62;
 // 넓히기 전 땅(동산 없음, 가장자리 산이 OLD_WORLD - 6부터). 예전 식생 자리를 고를 때만 쓴다
 const oldGround = (x: number, z: number) => {
   const r = Math.hypot(x, z), h = baseTerrainY(x, z);
@@ -55,7 +61,7 @@ function scatter(count: number, seed: number, rMin: number, rMax: number, ok: (x
     const a = r() * Math.PI * 2, d = rMin + Math.sqrt(r()) * (rMax - rMin);
     const x = Math.cos(a) * d, z = Math.sin(a) * d, y = ground(x, z);
     const slope = Math.hypot(ground(x + 0.4, z) - ground(x - 0.4, z), ground(x, z + 0.4) - ground(x, z - 0.4));
-    if (ok(x, y, z, slope)) out.push({ x, y: terrainY(x, z), z, r });
+    if (ok(x, y, z, slope)) out.push({ x, y: ground === terrainY ? y : terrainY(x, z), z, r });
   }
   return out;
 }
@@ -64,19 +70,18 @@ function widen(old: Item[], ring: Item[], tall = Infinity) {
   for (const it of old) {
     const dx = it.x - HILL.x, dz = it.z - HILL.z, d = Math.hypot(dx, dz);
     it.hide = Math.hypot(it.x, it.z) > OLD_WORLD - 6 || d < HILL.plateauR + 0.6 || it.y - baseTerrainY(it.x, it.z) > tall
-      || d < HILL.r + 0.5 && HILL.stairs.some((a) => dx * Math.cos(a) + dz * Math.sin(a) > 0 && Math.abs(dz * Math.cos(a) - dx * Math.sin(a)) < 2);
+      || d < HILL.r + 0.5 && HILL.stairs.some((a) => dx * Math.cos(a) + dz * Math.sin(a) > 0 && Math.abs(dz * Math.cos(a) - dx * Math.sin(a)) < STAIR.half + 1.2);
   }
   return old.concat(ring);
 }
 
-// hide인 것도 place는 불러 난수를 똑같이 쓰고, 그리지만 않는다
+// hide인 것도 place는 불러 난수를 똑같이 쓰고, 그리지만 않는다.
+// tile(m)을 주면 그 격자 칸마다 메시를 따로 만든다. 칸마다 경계구가 작아져 화면·그림자 카메라 밖 칸은 three가 그리지 않는다
 function instanced<T extends { x: number; y: number; z: number; hide?: boolean }>(
   root: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material, items: T[],
-  place: (it: T, o: THREE.Object3D, c: THREE.Color) => void,
+  place: (it: T, o: THREE.Object3D, c: THREE.Color) => void, tile = 0,
 ) {
-  const m = new THREE.InstancedMesh(geo, mat, items.filter((it) => !it.hide).length);
-  const o = new THREE.Object3D(), c = new THREE.Color();
-  let i = 0;
+  const o = new THREE.Object3D(), c = new THREE.Color(), cells = new Map<string, [THREE.Matrix4, THREE.Color][]>();
   for (const it of items) {
     o.position.set(it.x, it.y, it.z);
     o.rotation.set(0, 0, 0);
@@ -84,13 +89,24 @@ function instanced<T extends { x: number; y: number; z: number; hide?: boolean }
     place(it, o, c);
     if (it.hide) continue;
     o.updateMatrix();
-    m.setMatrixAt(i, o.matrix);
-    m.setColorAt(i++, c);
+    const k = tile ? `${Math.floor(it.x / tile)},${Math.floor(it.z / tile)}` : "";
+    let cell = cells.get(k);
+    if (!cell) cells.set(k, (cell = []));
+    cell.push([o.matrix.clone(), c.clone()]);
   }
-  m.castShadow = m.receiveShadow = true;
-  root.add(m);
-  return m;
+  return [...cells.values()].map((cell) => {
+    const m = new THREE.InstancedMesh(geo, mat, cell.length);
+    cell.forEach(([mm, cc], i) => { m.setMatrixAt(i, mm); m.setColorAt(i, cc); });
+    m.castShadow = m.receiveShadow = true;
+    m.computeBoundingSphere();
+    m.boundingSphere!.radius += 0.1; // 바람에 흔들리는 만큼
+    root.add(m);
+    return m;
+  });
 }
+
+// 땅 꼭짓점 높이·색은 꼭짓점마다 지형을 여섯 번 구해 무겁다. 처음 한 번만 구하고 인트로와 게임이 같이 쓴다
+let groundCache: { pos: Float32Array; col: Float32Array; normal: Float32Array } | null = null;
 
 export function buildWorld(root: THREE.Object3D) {
   // 땅: 높이·경사에 따라 색이 변한다
@@ -99,24 +115,47 @@ export function buildWorld(root: THREE.Object3D) {
   const geo = new THREE.PlaneGeometry(S * 2, S * 2, SEG, SEG);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color();
-  const grass = new THREE.Color("#b9cf9d"), grass2 = new THREE.Color("#9fbf86"), sand = new THREE.Color("#e3d7b8"), lakebed = new THREE.Color("#a2a184"), rock = new THREE.Color("#aaa6a8"), snow = new THREE.Color("#f1f0f4");
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), z = pos.getZ(i), y = terrainY(x, z);
-    pos.setY(i, y - stairDip(x, z));
-    // 바위색·눈은 동산을 뺀 땅으로 정해 동산은 풀빛으로 남는다
-    const by = baseTerrainY(x, z), slope = Math.hypot(baseTerrainY(x + 0.5, z) - baseTerrainY(x - 0.5, z), baseTerrainY(x, z + 0.5) - baseTerrainY(x, z - 0.5));
-    c.copy(grass).lerp(grass2, vnoise(x * 0.3, z * 0.3));
-    if (y < WATER_Y + 0.6) c.lerp(sand, clamp((WATER_Y + 0.6 - y) / 0.6, 0, 1));
-    if (y < WATER_Y) c.lerp(lakebed, clamp((WATER_Y - y) / 2.5, 0, 1)); // 호수 바닥: 깊을수록 모래가 조금 어두워진다
-    if (slope > 0.7) c.lerp(rock, clamp((slope - 0.7) / 0.8, 0, 1));
-    if (by > 5.5) c.lerp(snow, clamp((by - 5.5) / 2, 0, 1));
-    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  if (groundCache) {
+    (pos.array as Float32Array).set(groundCache.pos);
+    col.set(groundCache.col);
+    (geo.attributes.normal.array as Float32Array).set(groundCache.normal);
+  } else {
+    const grass = new THREE.Color("#b9cf9d"), grass2 = new THREE.Color("#9fbf86"), sand = new THREE.Color("#e3d7b8"), lakebed = new THREE.Color("#a2a184"), rock = new THREE.Color("#aaa6a8"), snow = new THREE.Color("#f1f0f4");
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i), y = terrainY(x, z);
+      pos.setY(i, y - stairDip(x, z));
+      // 바위색·눈은 동산을 뺀 땅으로 정해 동산은 풀빛으로 남는다
+      const by = baseTerrainY(x, z), slope = Math.hypot(baseTerrainY(x + 0.5, z) - baseTerrainY(x - 0.5, z), baseTerrainY(x, z + 0.5) - baseTerrainY(x, z - 0.5));
+      c.copy(grass).lerp(grass2, vnoise(x * 0.3, z * 0.3));
+      if (y < WATER_Y + 0.6) c.lerp(sand, clamp((WATER_Y + 0.6 - y) / 0.6, 0, 1));
+      if (y < WATER_Y) c.lerp(lakebed, clamp((WATER_Y - y) / 2.5, 0, 1)); // 호수 바닥: 깊을수록 모래가 조금 어두워진다
+      if (slope > 0.7) c.lerp(rock, clamp((slope - 0.7) / 0.8, 0, 1));
+      if (by > 5.5) c.lerp(snow, clamp((by - 5.5) / 2, 0, 1));
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    }
+    geo.computeVertexNormals();
+    groundCache = { pos: (pos.array as Float32Array).slice(), col: col.slice(), normal: (geo.attributes.normal.array as Float32Array).slice() };
   }
   geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  geo.computeVertexNormals();
-  const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
-  ground.receiveShadow = true;
-  root.add(ground);
+  // 땅은 꼭짓점을 같이 쓰는 GROUND_CHUNK칸 조각으로 나눠 그린다. 화면 밖 조각은 three가 거른다
+  const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), cull: [THREE.Object3D, THREE.Sphere, boolean][] = [];
+  const index = geo.index!.array, box = new THREE.Box3(), v = new THREE.Vector3();
+  for (let cy = 0; cy < SEG; cy += GROUND_CHUNK) for (let cx = 0; cx < SEG; cx += GROUND_CHUNK) {
+    // PlaneGeometry는 칸 (ix, iy)마다 인덱스 6개를 줄 순서로 둔다
+    const w = Math.min(GROUND_CHUNK, SEG - cx), h = Math.min(GROUND_CHUNK, SEG - cy), part = new Uint32Array(w * h * 6);
+    for (let iy = cy; iy < cy + h; iy++) part.set(index.subarray((iy * SEG + cx) * 6, (iy * SEG + cx + w) * 6), (iy - cy) * w * 6);
+    box.makeEmpty();
+    for (let iy = cy; iy <= cy + h; iy++) for (let ix = cx; ix <= cx + w; ix++) box.expandByPoint(v.fromBufferAttribute(pos, iy * (SEG + 1) + ix));
+    const g = new THREE.BufferGeometry();
+    for (const [name, attr] of Object.entries(geo.attributes)) g.setAttribute(name, attr);
+    g.setIndex(new THREE.BufferAttribute(part, 1));
+    g.boundingBox = box.clone();
+    g.boundingSphere = box.getBoundingSphere(new THREE.Sphere());
+    const ground = new THREE.Mesh(g, groundMat);
+    ground.receiveShadow = true;
+    root.add(ground);
+    cull.push([ground, g.boundingSphere, false]);
+  }
 
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(S * 2, S * 2),
@@ -130,6 +169,14 @@ export function buildWorld(root: THREE.Object3D) {
   // 식생: 전부 인스턴싱
   const windTime = { value: 0 };
   buildBigTree(root, HILL.x, HILL.z, windTime);
+  // 식생 칸들. 꽃은 작아서 멀리서는 줄여 없애고(flowerFade, 셰이더) 다 사라진 칸은 아예 끈다
+  const flowerFade = { value: new THREE.Vector2(1e9, 2e9) };
+  const tiled = (ms: THREE.InstancedMesh[], depth?: THREE.Material, flower = false) => {
+    for (const m of ms) {
+      if (depth) m.customDepthMaterial = depth;
+      cull.push([m, m.boundingSphere!, flower]);
+    }
+  };
   const canopyWind = `
     transformed.xz += wind * ${f(SWAY_CANOPY)} * (0.75 + 0.25 * position.y);
     transformed *= 1.0 + ${f(RIPPLE)} * sin(uWindTime * 2.1 + dot(position, vec3(2.3, 3.1, 1.7)) + instanceMatrix[3].x);`;
@@ -138,74 +185,72 @@ export function buildWorld(root: THREE.Object3D) {
   // 바깥 고리는 예전과 같은 밀도가 되게 수를 정했다
   const treeOk = (x: number, y: number, z: number, s: number) => onLand(x, y, z, s) && y < 5;
   const trees = widen(scatter(620, 11, 8, OLD_WORLD + 3, treeOk, oldGround), scatter(860, 111, OLD_WORLD - 6, WORLD + 3, treeOk), 3);
-  instanced(root, new THREE.CylinderGeometry(0.1, 0.17, 1, 7), new THREE.MeshStandardMaterial({ roughness: 1 }), trees, (t, o, col) => {
+  tiled(instanced(root, new THREE.CylinderGeometry(0.1, 0.17, 1, 7), new THREE.MeshStandardMaterial({ roughness: 1 }), trees, (t, o, col) => {
     const h = 0.9 + t.r() * 0.8;
     o.position.y += h / 2;
     o.scale.set(1, h, 1);
     col.set("#8b6a52").offsetHSL(0, 0, (t.r() - 0.5) * 0.1);
-  });
+  }, TILE.trunk));
   const canopy: { x: number; y: number; z: number; s: number; hue: number; l: number; hide?: boolean }[] = [];
   for (const t of trees) {
     const h = 0.9 + t.r() * 0.8, k = 2 + Math.floor(t.r() * 2), hue = 0.25 + t.r() * 0.12, l = 0.5 + t.r() * 0.15;
     for (let i = 0; i < k; i++) canopy.push({ x: t.x + (t.r() - 0.5) * 0.5, y: t.y + h + 0.3 + i * 0.45 * (t.r() + 0.5), z: t.z + (t.r() - 0.5) * 0.5, s: 0.55 + t.r() * 0.5, hue, l, hide: t.hide });
   }
   // 수관과 덤불은 그림자도 같이 흔든다. 어긋나면 표면이 제 그림자 안으로 들어가 얼룩이 생길 수 있다
-  instanced(root, new THREE.SphereGeometry(1, 12, 9), sway(new THREE.MeshStandardMaterial({ roughness: 0.95 }), windTime, "canopy", canopyWind), canopy, (t, o, col) => {
+  tiled(instanced(root, new THREE.SphereGeometry(1, 12, 9), sway(new THREE.MeshStandardMaterial({ roughness: 0.95 }), windTime, "canopy", canopyWind), canopy, (t, o, col) => {
     o.scale.set(t.s * 1.1, t.s * 0.9, t.s * 1.1);
     col.setHSL(t.hue, 0.45, t.l);
-  }).customDepthMaterial = sway(new THREE.MeshDepthMaterial(), windTime, "canopy", canopyWind);
-  instanced(root, new THREE.SphereGeometry(1, 10, 8), sway(new THREE.MeshStandardMaterial({ roughness: 1 }), windTime, "bush", bushWind), widen(scatter(420, 23, 5, OLD_WORLD + 1, onLand, oldGround), scatter(680, 123, OLD_WORLD - 6, WORLD + 1, onLand)), (t, o, col) => {
+  }, TILE.canopy), sway(new THREE.MeshDepthMaterial(), windTime, "canopy", canopyWind));
+  tiled(instanced(root, new THREE.SphereGeometry(1, 10, 8), sway(new THREE.MeshStandardMaterial({ roughness: 1 }), windTime, "bush", bushWind), widen(scatter(420, 23, 5, OLD_WORLD + 1, onLand, oldGround), scatter(680, 123, OLD_WORLD - 6, WORLD + 1, onLand)), (t, o, col) => {
     const s = 0.35 + t.r() * 0.45;
     o.position.y += s * 0.5;
     o.scale.set(s * 1.3, s * 0.8, s * 1.2);
     col.setHSL(0.28 + t.r() * 0.08, 0.4, 0.5 + t.r() * 0.12);
-  }).customDepthMaterial = sway(new THREE.MeshDepthMaterial(), windTime, "bush", bushWind);
+  }, TILE.bush), sway(new THREE.MeshDepthMaterial(), windTime, "bush", bushWind));
   const flowers = widen(scatter(1800, 37, 3.5, OLD_WORLD - 1, onLand, oldGround), scatter(2790, 137, OLD_WORLD - 6, WORLD - 1, onLand));
   // 꽃 줄기는 밑동에서 휘고 봉오리는 줄기 끝을 따라간다. 그림자는 너무 작아 그대로 둔다
   const stemWind = `float bend = (position.y + 0.15) / 0.32; transformed.xz += wind * ${f(SWAY_FLOWER)} * bend * bend;`;
-  instanced(root, new THREE.CylinderGeometry(0.018, 0.022, 0.3, 5), sway(new THREE.MeshStandardMaterial({ roughness: 1 }), windTime, "stem", stemWind), flowers, (_t, o, col) => {
+  tiled(instanced(root, new THREE.CylinderGeometry(0.018, 0.022, 0.3, 5), sway(new THREE.MeshStandardMaterial({ roughness: 1 }), windTime, "stem", stemWind, flowerFade), flowers, (_t, o, col) => {
     o.position.y += 0.15;
     col.set("#88b57a");
-  });
-  instanced(root, new THREE.SphereGeometry(0.09, 8, 6), sway(new THREE.MeshStandardMaterial({ roughness: 0.9 }), windTime, "bud", `transformed.xz += wind * ${f(SWAY_FLOWER)};`), flowers, (t, o, col) => {
+  }, TILE.flower), undefined, true);
+  tiled(instanced(root, new THREE.SphereGeometry(0.09, 8, 6), sway(new THREE.MeshStandardMaterial({ roughness: 0.9 }), windTime, "bud", `transformed.xz += wind * ${f(SWAY_FLOWER)};`, flowerFade), flowers, (t, o, col) => {
     o.position.y += 0.32;
     o.scale.set(1, 0.55, 1);
     col.setHSL([0, 0.08, 0.14, 0.78, 0.9, 0.55][Math.floor(t.r() * 6)], 0.6, 0.72);
-  });
+  }, TILE.flower), undefined, true);
   const rockOk = (_x: number, y: number) => y > WATER_Y + 0.2;
   // 주울 수 없는 큰 바위. 줍는 돌과 구별되도록 한참 크다
-  instanced(root, stoneGeometry(3), new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), widen(scatter(90, 71, 7, OLD_WORLD + 4, rockOk, oldGround), scatter(140, 171, OLD_WORLD - 6, WORLD + 4, rockOk)), (t, o, col) => {
+  tiled(instanced(root, stoneGeometry(3), new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), widen(scatter(90, 71, 7, OLD_WORLD + 4, rockOk, oldGround), scatter(140, 171, OLD_WORLD - 6, WORLD + 4, rockOk)), (t, o, col) => {
     const s = 0.9 + t.r() * 1.3;
     o.scale.set(s * 1.4, s, s * 1.2);
     o.rotation.set((t.r() - 0.5) * 0.4, t.r() * 6, 0);
     o.position.y += s * 0.25;
     col.setHSL(0.09, 0.06, 0.55 + t.r() * 0.15);
-  });
+  }, TILE.rock));
 
   hillStairs(root);
 
+  const sph = new THREE.Sphere(), fwd = new THREE.Vector3(), to = new THREE.Vector3();
   return {
-    update(dt: number) { windTime.value += dt; },
+    // cam·fog를 주면 칸을 거른다. 안개 끝(시선 깊이)보다 먼 칸은 안개색뿐이라 끄고, 꽃은 안개가 시작하는 거리 근처에서 줄여 없앤다
+    update(dt: number, cam?: THREE.Camera, fog?: THREE.Fog) {
+      windTime.value += dt;
+      if (!cam || !fog) return;
+      flowerFade.value.set(fog.near * FLOWER_FADE[0], fog.near * FLOWER_FADE[1]);
+      cam.getWorldDirection(fwd);
+      for (const [o, s, flower] of cull) {
+        sph.copy(s).applyMatrix4(o.matrixWorld);
+        to.subVectors(sph.center, cam.position);
+        o.visible = to.dot(fwd) - sph.radius < fog.far && (!flower || to.length() - sph.radius < flowerFade.value.y);
+      }
+    },
   };
 }
 
-// 계단 밑 땅은 그려지는 높이만 조금 낮춰 디딤판 사이로 풀이 뚫고 나오지 않게 한다. 걷는 높이는 그대로다
-const DIP = 0.14;
-function stairDip(x: number, z: number) {
-  const dx = x - HILL.x, dz = z - HILL.z, d = Math.hypot(dx, dz);
-  if (d > HILL.r || d < HILL.plateauR - 0.4) return 0;
-  const ends = clamp((d - HILL.plateauR + 0.4) / 0.7, 0, 1) * clamp((HILL.r - d) / 0.4, 0, 1);
-  let k = 0;
-  for (const a of HILL.stairs) {
-    if (dx * Math.cos(a) + dz * Math.sin(a) <= 0) continue;
-    k = Math.max(k, 1 - clamp((Math.abs(dz * Math.cos(a) - dx * Math.sin(a)) - 0.9) / 0.6, 0, 1));
-  }
-  return DIP * ends * k * k * (3 - 2 * k);
-}
-
-// 동산 계단과 난간, 꼭대기 울타리. 디딤판 윗면은 가운데의 땅 높이에 맞춘다
+// 동산 계단과 난간, 꼭대기 울타리. 디딤판 높이는 걷는 높이와 같은 TREADS를 쓴다
 function hillStairs(root: THREE.Object3D) {
-  const TREAD = 0.22, HALF = 0.8, RAIL = 0.85, POST_H = 0.85, GAP = 1.6;
+  const { tread: TREAD, half: HALF, rail: RAIL } = STAIR, POST_H = 0.85, GAP = 1.6;
   const r = rng(501), wood = new THREE.MeshStandardMaterial({ roughness: 0.9 });
   const steps: { x: number; y: number; z: number; h: number; yaw: number }[] = [];
   const posts: { x: number; y: number; z: number }[] = [];
@@ -219,16 +264,16 @@ function hillStairs(root: THREE.Object3D) {
     for (const dy of [0, -0.4]) rails.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + dy, z: (a.z + b.z) / 2, to: new THREE.Vector3(b.x, b.y + dy, b.z) });
   };
   const top = HILL.plateauR, edge = Math.sqrt(top * top - RAIL * RAIL);
-  for (const a of HILL.stairs) {
+  HILL.stairs.forEach((a, s) => {
     const ux = Math.cos(a), uz = Math.sin(a);
     const at = (d: number, lat: number) => [HILL.x + ux * d - uz * lat, HILL.z + uz * d + ux * lat] as const;
-    const yAt = (d: number, lat: number) => terrainY(...at(d, lat));
-    for (let d = top - 0.3 + TREAD / 2; d < HILL.r - 0.7; d += TREAD) {
-      const hi = Math.max(yAt(d, 0) + 0.02, yAt(d - TREAD / 2, -HALF) - DIP + 0.07, yAt(d - TREAD / 2, HALF) - DIP + 0.07); // 옆으로 기운 땅도 덮는다
-      const lo = Math.min(yAt(d + TREAD / 2, -HALF), yAt(d + TREAD / 2, HALF)) - DIP;
+    const yAt = (d: number, lat: number) => { const [x, z] = at(d, lat); return terrainY(x, z) - stairDip(x, z); };
+    TREADS[s].forEach((hi, i) => {
+      const d = STAIR.d0 + TREAD * (i + 0.5);
+      const lo = Math.min(yAt(d + TREAD / 2, -HALF), yAt(d + TREAD / 2, HALF), yAt(d + TREAD / 2, 0));
       const [x, z] = at(d, 0);
-      steps.push({ x, y: hi, z, h: hi - lo + 0.1, yaw: Math.atan2(ux, uz) });
-    }
+      steps.push({ x, y: hi, z, h: hi - lo + 0.2, yaw: Math.atan2(ux, uz) });
+    });
     // 난간은 비탈이 막히는 곳까지
     let end = edge;
     while (end < HILL.r && hillBlocked(...at(end, RAIL + 0.15))) end += 0.05;
@@ -241,7 +286,7 @@ function hillStairs(root: THREE.Object3D) {
         prev = p;
       }
     }
-  }
+  });
   // 꼭대기 테두리: 계단 입구 사이를 잇는다
   const open = Math.asin(RAIL / top), sorted = [...HILL.stairs].sort((p, q) => p - q);
   sorted.forEach((a, i) => {

@@ -53,7 +53,8 @@ clearInterval(timer);
 await peerPose(6, 4);
 await until((id) => window.__doltap.debugState().remotes.some((r) => r.id === id && Math.hypot(r.x - 6, r.z - 4) < 0.5), peerId);
 await a.evaluate(() => window.__doltap.debugTeleport(5, 3));
-await new Promise((r) => setTimeout(r, 4000));
+// 저사양 렌더링에서는 프레임이 느려 위치 전송이 늦을 수 있다
+for (let i = 0; i < 60 && !poses.some((p) => p.id === myId && Math.hypot(p.x - 5, p.z - 3) < 0.2); i++) await new Promise((r) => setTimeout(r, 1000));
 assert.ok(poses.some((p) => p.id === myId && Math.hypot(p.x - 5, p.z - 3) < 0.2), "브라우저 위치가 상대에게 전달되지 않음");
 console.log("ok 위치 동기화 양방향");
 
@@ -251,7 +252,8 @@ for (let i = 0; i < 12 && myTower(await state()); i++) {
   await pickNearest(0.45);
   await prepDrop(t4.x + 0.1, t4.z - 0.8);
   console.log("큰 돌:", await doDrop());
-  if (await dialog.count()) await dialog.getByRole("button", { name: "나중" }).click();
+  // 5단 소원 안내면 [나중], 큰 돌이 첫돌 옆에 있어 첫돌을 집으려 했으면 [아니요]
+  if (await dialog.count()) await dialog.getByRole("button", { name: /나중|아니요/ }).click();
 }
 assert.equal(myTower(await state()), undefined, "큰 돌을 올려도 무너지지 않음");
 await a.waitForTimeout(1500);
