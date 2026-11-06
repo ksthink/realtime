@@ -64,15 +64,43 @@ const hillW = (x: number, z: number) => {
   return w;
 };
 
-// 동산을 얹기 전 땅
-export function baseTerrainY(x: number, z: number) {
+// 다리 옆이 마른 땅이나 얕은 물이면 판 가장자리에서 BANK m에 걸쳐 둑으로 이어 붙인다. 깊은 물 위는 그대로 다리 옆면이 선다
+const BANK = 1.6;
+// 다리 옆 수면 높이의 얕은 습지를 마른 풀밭으로 메운다: [x0, x1, z0, z1] 안은 수면보다 FILL_Y 위, 바깥 FILL_EDGE m에 걸쳐 원래 땅으로
+const FILLS = [[-2.6, 2.6, -18.2, -7.6], [-44.8, -41.6, -57.5, -49]], FILL_Y = 0.22, FILL_EDGE = 1.2;
+const ease01 = (u: number) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
+
+// 가장자리 산줄기: WORLD - 6부터 솟아 r 130쯤에서 12~25m 봉우리가 되고, 그 너머는 낮아져 땅 끝이 능선 뒤로 숨는다.
+// 봉우리 높이는 방향(각도)과 잡음으로 들쭉날쭉하다
+function rimY(x: number, z: number, r: number) {
+  const a = Math.atan2(z, x);
+  const peak = 20 + 3.5 * Math.sin(3 * a + 1.3) + 2 * Math.sin(7 * a + 0.4) + fbm(x * 0.05 + 11, z * 0.05 + 4) * 4;
+  const up = ease01((r - (WORLD - 6)) / 16), down = 1 - 0.65 * ease01((r - 131) / 16);
+  return (peak + fbm(x * 0.14 + 7, z * 0.14 + 2) * 3) * up * down;
+}
+
+// 동산을 얹기 전 땅. banks가 false면 둑·습지 메우기 전(예전 식생 자리를 고를 때 쓴다)
+export function baseTerrainY(x: number, z: number, banks = true) {
   const r = Math.hypot(x, z);
   let h = fbm(x * 0.04, z * 0.04) * 6.5 + fbm(x * 0.16 + 3, z * 0.16 + 8) * 0.7;
   const dvs = RIVERS.map((f) => z - f(x));
   for (const dv of dvs) h += -3.4 * Math.exp(-(dv * dv) / (5.2 * 5.2)); // 계곡
   const flat = clamp((r - 3) / 6, 0, 1);
   h *= flat * flat * (3 - 2 * flat); // 시작 지점은 평평하게
-  if (r > WORLD - 6) h += Math.pow((r - (WORLD - 6)) / 6, 2) * 7; // 가장자리 산
+  if (r > WORLD - 6) h += rimY(x, z, r); // 가장자리 산
+  if (banks) {
+    for (const [x0, x1, z0, z1] of FILLS) {
+      const w = ease01((FILL_EDGE - Math.max(x0 - x, x - x1, 0)) / FILL_EDGE) * ease01((FILL_EDGE - Math.max(z0 - z, z - z1, 0)) / FILL_EDGE);
+      if (w > 0) h = Math.max(h, h + (WATER_Y + FILL_Y - h) * w);
+    }
+    for (const b of BRIDGES) {
+      const dv = dvs[b.river], side = Math.abs(x - b.x) - 1.6, end = Math.max(-b.minus - dv, dv - b.plus);
+      const d = Math.hypot(Math.max(side, 0), Math.max(end, 0));
+      // 수면 0.4m보다 깊은 물에는 둑을 쌓지 않는다. 그 경계는 물속이라 걸어서 닿지 않고, 걸어 들어갈 수 있는 곳은 늘 둑이 된다
+      if (d >= BANK || h < WATER_Y - 0.4) continue;
+      h = Math.max(h, h + (WATER_Y + 0.45 - h) * (1 - ease01(d / BANK)));
+    }
+  }
   for (const b of BRIDGES) if (Math.abs(x - b.x) < 1.6 && dvs[b.river] > -b.minus && dvs[b.river] < b.plus) h = Math.max(h, WATER_Y + 0.45); // 돌다리
   return h;
 }

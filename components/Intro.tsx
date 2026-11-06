@@ -6,6 +6,7 @@ import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import * as THREE from "three";
 import { MAX_PEOPLE } from "@/lib/rules";
 import { unlockSound } from "@/lib/sound";
+import { makeSkyline } from "@/lib/three/skyline";
 import { buildWorld } from "@/lib/three/world";
 import "./intro.css";
 
@@ -23,6 +24,9 @@ function Village() {
     sun.position.set(8, 14, 6);
     root.add(new THREE.HemisphereLight("#f3ecdf", "#b9c9b4", 1.6), sun);
     buildWorld(root);
+    const skyline = makeSkyline();
+    skyline.update(camera);
+    root.add(skyline.mesh);
     scene.add(root);
     invalidate();
     return () => {

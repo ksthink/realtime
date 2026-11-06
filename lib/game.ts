@@ -7,6 +7,7 @@ import { HILL, WORLD, clamp, canWade, hillBlocked, isWater, lerp, onStairs, terr
 import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
 import { makePetals } from "./three/petals";
+import { makeSkyline } from "./three/skyline";
 import { makeSplash } from "./three/splash";
 import { makePickGlow, makeStoneMesh } from "./three/stone";
 import { buildWorld } from "./three/world";
@@ -82,6 +83,7 @@ export class Game {
   private glow = makePickGlow();
   private petals = makePetals();
   private splash = makeSplash();
+  private skyline = makeSkyline();
   private world: ReturnType<typeof buildWorld>;
   private glowOn: StoneView | null = null;
   private glowK = 0;
@@ -109,7 +111,7 @@ export class Game {
     this.sun.shadow.bias = -0.0008;
     this.root.add(this.sun, this.sun.target);
     this.world = buildWorld(this.root);
-    this.root.add(this.petals.points, this.splash.group);
+    this.root.add(this.petals.points, this.splash.group, this.skyline.mesh);
 
     this.me = this.makeAvatar(meRow);
     const a = Math.random() * Math.PI * 2;
@@ -565,10 +567,12 @@ export class Game {
       fwd.normalize();
       const right = new THREE.Vector3().crossVectors(fwd, UP);
       const dir = right.multiplyScalar(ix).addScaledVector(fwd, -iz);
-      stepOnLand(me.g.position, dir, (me.carrying ? 3 : 4) * dt);
+      const want = (me.carrying ? 3 : 4) * dt;
+      const moved = stepOnLand(me.g.position, dir, want);
       const dy = Math.atan2(dir.x, dir.z) - me.yaw;
       me.yaw += Math.atan2(Math.sin(dy), Math.cos(dy)) * Math.min(1, dt * 12);
-      moving = true;
+      // 벽에 정면으로 막혀 못 갔으면 걷지 않고 선다(제자리 걸음과 발소리를 내지 않는다)
+      moving = moved > 0;
     }
     me.baseY = walkY(me.g.position.x, me.g.position.z);
     animateBlob(me, dt, moving);
@@ -733,6 +737,7 @@ export class Game {
     this.camera.lookAt(this.camLook);
     seeThrough.set(this.camLook);
     this.updateFog(dt);
+    this.skyline.update(this.camera);
   }
 
   // 높이 올라갈수록 안개를 걷어 동산 꼭대기에서 마을 끝까지 보이게 한다. 보통 땅은 3.5m 아래다
@@ -853,6 +858,7 @@ export class Game {
     this.glow.dispose();
     this.petals.dispose();
     this.splash.dispose();
+    this.skyline.dispose();
     this.net.stop();
     this.scene.remove(this.root);
   }
@@ -862,14 +868,23 @@ const round2 = (v: number) => Math.round(v * 100) / 100;
 // 네트워크 입력도 거치므로 unknown을 받는다
 const isReaction = (v: unknown): v is Reaction => (REACTIONS as readonly unknown[]).includes(v);
 
+const blocked = (x: number, z: number) => Math.hypot(x, z) > WORLD || (isWater(x, z) && !canWade(x, z)) || hillBlocked(x, z);
+const SLIDE_STEP = Math.PI / 12; // 막히면 15°씩 돌려 가며 비켜 갈 방향을 찾는다
+
+// dir 방향으로 dist만큼 움직이고, 실제로 움직인 거리를 돌려준다.
+// 막히면 벽을 따라 미끄러진다: 방향을 조금씩 돌리고, 돌린 만큼(cos) 덜 간다. 정면으로 부딪히면 거의 0이다
 function stepOnLand(p: THREE.Vector3, dir: THREE.Vector3, dist: number) {
-  const tryMove = (dx: number, dz: number) => {
-    const nx = p.x + dx, nz = p.z + dz;
-    if (Math.hypot(nx, nz) > WORLD || (isWater(nx, nz) && !canWade(nx, nz)) || hillBlocked(nx, nz)) return false;
-    p.x = nx; p.z = nz;
-    return true;
-  };
-  return tryMove(dir.x * dist, dir.z * dist) || tryMove(dir.x * dist, 0) || tryMove(0, dir.z * dist);
+  const a0 = Math.atan2(dir.x, dir.z);
+  for (let k = 0; k < 5; k++) { // 60°까지만: 그보다 꺾이면 벽을 정면으로 민 것으로 보고 멈춘다
+    const d = dist * Math.cos(k * SLIDE_STEP);
+    for (const s of k ? [1, -1] : [1]) {
+      const a = a0 + s * k * SLIDE_STEP, nx = p.x + Math.sin(a) * d, nz = p.z + Math.cos(a) * d;
+      if (blocked(nx, nz)) continue;
+      p.x = nx; p.z = nz;
+      return d;
+    }
+  }
+  return 0;
 }
 
 // 위로 갈수록 옅어지는 빛기둥. 가장자리가 부드럽고 안개를 무시해 맵 반대편에서도 보인다

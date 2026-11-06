@@ -47,9 +47,9 @@ const OLD_WORLD = 80;
 // 식생을 나누는 격자 칸(m). 인덱스가 많은 것은 잘게, 적은 것은 크게 나눠 그리기 호출을 줄인다.
 // 꽃은 안개 시작 거리 × FLOWER_FADE 사이에서 사라진다. 땅은 GROUND_CHUNK칸씩 나눈다
 const TILE = { trunk: 48, canopy: 24, bush: 32, flower: 24, rock: 48 }, FLOWER_FADE = [0.94, 1.35], GROUND_CHUNK = 62;
-// 넓히기 전 땅(동산 없음, 가장자리 산이 OLD_WORLD - 6부터). 예전 식생 자리를 고를 때만 쓴다
+// 넓히기 전 땅(동산·다리 둑 없음, 가장자리 산이 OLD_WORLD - 6부터). 예전 식생 자리를 고를 때만 쓴다
 const oldGround = (x: number, z: number) => {
-  const r = Math.hypot(x, z), h = baseTerrainY(x, z);
+  const r = Math.hypot(x, z), h = baseTerrainY(x, z, false);
   return r > OLD_WORLD - 6 ? h + Math.pow((r - (OLD_WORLD - 6)) / 6, 2) * 7 : h;
 };
 
@@ -130,7 +130,7 @@ export function buildWorld(root: THREE.Object3D) {
       if (y < WATER_Y + 0.6) c.lerp(sand, clamp((WATER_Y + 0.6 - y) / 0.6, 0, 1));
       if (y < WATER_Y) c.lerp(lakebed, clamp((WATER_Y - y) / 2.5, 0, 1)); // 호수 바닥: 깊을수록 모래가 조금 어두워진다
       if (slope > 0.7) c.lerp(rock, clamp((slope - 0.7) / 0.8, 0, 1));
-      if (by > 5.5) c.lerp(snow, clamp((by - 5.5) / 2, 0, 1));
+      if (by > 21) c.lerp(snow, clamp((by - 21) / 4, 0, 1)); // 가장자리 산줄기의 높은 봉우리에만 눈
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     }
     geo.computeVertexNormals();
