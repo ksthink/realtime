@@ -70,13 +70,15 @@ const BANK = 1.6;
 const FILLS = [[-2.6, 2.6, -18.2, -7.6], [-44.8, -41.6, -57.5, -49]], FILL_Y = 0.22, FILL_EDGE = 1.2;
 const ease01 = (u: number) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
 
-// 가장자리 산줄기: WORLD - 6부터 솟아 r 130쯤에서 12~25m 봉우리가 되고, 그 너머는 낮아져 땅 끝이 능선 뒤로 숨는다.
-// 봉우리 높이는 방향(각도)과 잡음으로 들쭉날쭉하다
-function rimY(x: number, z: number, r: number) {
+// 가장자리 산줄기: WORLD - 6부터 솟아 r 127쯤에서 8~16m 봉우리가 되고, 그 너머는 낮아져 땅 끝이 능선 뒤로 숨는다.
+// 봉우리 높이는 방향(각도)과 잡음으로 들쭉날쭉하다. 너무 높으면 먼 산 배경을 가린다
+export function rimY(x: number, z: number) {
+  const r = Math.hypot(x, z);
+  if (r <= WORLD - 6) return 0;
   const a = Math.atan2(z, x);
-  const peak = 20 + 3.5 * Math.sin(3 * a + 1.3) + 2 * Math.sin(7 * a + 0.4) + fbm(x * 0.05 + 11, z * 0.05 + 4) * 4;
-  const up = ease01((r - (WORLD - 6)) / 16), down = 1 - 0.65 * ease01((r - 131) / 16);
-  return (peak + fbm(x * 0.14 + 7, z * 0.14 + 2) * 3) * up * down;
+  const peak = 12 + 2.5 * Math.sin(3 * a + 1.3) + 1.5 * Math.sin(7 * a + 0.4) + fbm(x * 0.05 + 11, z * 0.05 + 4) * 3;
+  const up = ease01((r - (WORLD - 6)) / 13), down = 1 - 0.7 * ease01((r - 127) / 14);
+  return (peak + fbm(x * 0.14 + 7, z * 0.14 + 2) * 2) * up * down;
 }
 
 // 동산을 얹기 전 땅. banks가 false면 둑·습지 메우기 전(예전 식생 자리를 고를 때 쓴다)
@@ -87,7 +89,7 @@ export function baseTerrainY(x: number, z: number, banks = true) {
   for (const dv of dvs) h += -3.4 * Math.exp(-(dv * dv) / (5.2 * 5.2)); // 계곡
   const flat = clamp((r - 3) / 6, 0, 1);
   h *= flat * flat * (3 - 2 * flat); // 시작 지점은 평평하게
-  if (r > WORLD - 6) h += rimY(x, z, r); // 가장자리 산
+  h += rimY(x, z); // 가장자리 산
   if (banks) {
     for (const [x0, x1, z0, z1] of FILLS) {
       const w = ease01((FILL_EDGE - Math.max(x0 - x, x - x1, 0)) / FILL_EDGE) * ease01((FILL_EDGE - Math.max(z0 - z, z - z1, 0)) / FILL_EDGE);

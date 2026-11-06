@@ -6,7 +6,7 @@ import { clamp, lerp, rng } from "../terrain";
 
 const HAZE = "#d9e3ef"; // 하늘·안개색
 const R = 200; // 그리는 반경. 카메라 far(260)보다 안쪽이면 된다
-const COLS = 240; // 둘레 칸 수(1.5°)
+const COLS = 360; // 둘레 칸 수(1°)
 const BASE = -0.3; // 밑동 높이(눈높이 기준, tan 단위). 하늘에서 내려다봐도 빈틈이 없게 충분히 내린다
 // 줄마다 밑동에서 능선까지의 높이 비율. 맨 위가 능선이다
 const ROWS = [0, 0.42, 0.62, 0.8, 0.92, 1];
@@ -15,53 +15,53 @@ const SUN = new THREE.Vector2(0.8, 0.6); // 해가 오는 쪽(x, z). game.ts SUN
 // 멀수록 옅고 푸르다. lo·amp: 능선 높이(눈높이 위 tan), mix: 하늘색에 섞는 정도, k: 잡음 촘촘함
 type Layer = { seed: number; color: string; mix: number; lo: number; amp: number; k: number };
 const LAYERS: Layer[] = [
-  { seed: 11, color: "#8394b4", mix: 0.8, lo: 0.035, amp: 0.1, k: 7 },
-  { seed: 23, color: "#7e91ab", mix: 0.72, lo: 0.025, amp: 0.085, k: 9 },
-  { seed: 37, color: "#7d8f9d", mix: 0.64, lo: 0.015, amp: 0.065, k: 12 },
+  { seed: 11, color: "#8394b4", mix: 0.8, lo: 0.1, amp: 0.13, k: 7 },
+  { seed: 23, color: "#7e91ab", mix: 0.72, lo: 0.08, amp: 0.11, k: 9 },
+  { seed: 37, color: "#7d8f9d", mix: 0.64, lo: 0.06, amp: 0.085, k: 12 },
 ];
 
 // 이름난 산: 방향(라디안, atan2(z, x)), 반폭(라디안), 높이(tan), 놓을 층
-const HALLA = { a: -1.95, w: 0.46, h: 0.135, layer: 1 }; // 한라산: 낮고 길게 퍼진 순상 화산, 꼭대기에 작은 분화구
-const BAEKDU = { a: 1.05, w: 0.34, h: 0.15, layer: 0 }; // 백두산: 넓은 덩어리 위 들쭉날쭉한 분화구 테두리
+const HALLA = { a: -1.95, w: 0.62, h: 0.19, layer: 1 }; // 한라산: 낮고 길게 퍼진 순상 화산, 꼭대기에 작은 분화구
+const BAEKDU = { a: 1.05, w: 0.42, h: 0.235, layer: 0 }; // 백두산: 넓은 덩어리 위 들쭉날쭉한 분화구 테두리
 
-// 둘레를 따라 이어지는(끝과 처음이 맞는) 1차원 값 잡음
+// 둘레를 따라 이어지는(끝과 처음이 맞는) 1차원 값 잡음. 직선으로 이어 능선이 각지게 꺾인다
 function ring(seed: number, n: number) {
   const r = rng(seed), v = Array.from({ length: n }, r);
   return (u: number) => {
-    const x = (((u % 1) + 1) % 1) * n, i = Math.floor(x), f = x - i, s = f * f * (3 - 2 * f);
-    return lerp(v[i % n], v[(i + 1) % n], s);
+    const x = (((u % 1) + 1) % 1) * n, i = Math.floor(x);
+    return lerp(v[i % n], v[(i + 1) % n], x - i);
   };
 }
 
 const ridged = (v: number) => { const t = 1 - Math.abs(v * 2 - 1); return t * t; };
-const bump = (u: number) => (Math.abs(u) >= 1 ? 0 : (1 - u * u) ** 2);
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 function halla(a: number) {
   const u = wrap(a - HALLA.a) / HALLA.w;
   if (Math.abs(u) >= 1) return 0;
-  // 긴 자락 + 꼭대기의 조금 가파른 봉우리 - 분화구(백록담) 오목함
-  return HALLA.h * (0.8 * bump(u) ** 1.3 + 0.2 * Math.max(0, 1 - Math.abs(u) / 0.16) ** 1.4 - 0.035 * Math.max(0, 1 - Math.abs(u) / 0.05));
+  // 완만한 긴 자락 + 꼭대기의 둥근 봉우리 - 분화구(백록담) 오목함
+  const top = Math.max(0, 1 - Math.abs(u) / 0.16), crater = Math.max(0, 1 - Math.abs(u) / 0.07);
+  return HALLA.h * (0.9 * (1 - u * u) ** 1.7 + 0.1 * top * top - 0.035 * crater);
 }
 
-const baekduJag = ring(71, 60);
+const baekduJag = ring(71, 300);
 function baekdu(a: number) {
   const u = wrap(a - BAEKDU.a) / BAEKDU.w;
   if (Math.abs(u) >= 1) return 0;
   const body = (1 - u ** 4) ** 2.2; // 어깨가 넓고 위가 평평한 덩어리
-  const rim = Math.max(0, 1 - Math.abs(u) / 0.42); // 꼭대기 테두리 구간
-  const jag = (ridged(baekduJag(a / (Math.PI * 2))) - 0.4) * 0.12 * rim; // 들쭉날쭉한 봉우리들
-  const crater = 0.07 * Math.max(0, 1 - Math.abs(u) / 0.13) ** 0.6; // 천지 자리 오목함
+  const rim = clamp(1.4 - Math.abs(u) * 2.4, 0, 1); // 꼭대기 테두리 구간
+  const jag = (ridged(baekduJag(a / (Math.PI * 2))) - 0.35) * 0.13 * rim; // 들쭉날쭉한 봉우리들
+  const crater = 0.06 * Math.max(0, 1 - Math.abs(u + 0.06) / 0.1); // 천지 자리 오목함
   return BAEKDU.h * (0.86 * body + jag - crater);
 }
 
 function layerHeights(l: Layer, idx: number) {
-  const n1 = ring(l.seed, l.k), n2 = ring(l.seed + 1, l.k * 2 + 1), n3 = ring(l.seed + 2, l.k * 5 + 3), env = ring(l.seed + 3, 5);
+  const n = [1, 2.3, 5.1, 11.3].map((m, j) => ring(l.seed + j, Math.round(l.k * m))), env = ring(l.seed + 7, 6);
   const h = new Float32Array(COLS + 1);
   for (let i = 0; i <= COLS; i++) {
     const u = i / COLS, a = u * Math.PI * 2;
     const e = 0.45 + 0.75 * env(u); // 큰 굴곡: 산맥이 높아졌다 낮아졌다 한다
-    let y = l.lo + l.amp * e * (ridged(n1(u)) * 0.62 + ridged(n2(u)) * 0.26 + n3(u) * 0.12);
+    let y = l.lo + l.amp * e * (ridged(n[0](u)) * 0.55 + ridged(n[1](u)) * 0.27 + ridged(n[2](u)) * 0.12 + n[3](u) * 0.06);
     if (idx === HALLA.layer) y = Math.max(y, halla(a));
     if (idx === BAEKDU.layer) y = Math.max(y, baekdu(a));
     h[i] = y;
@@ -93,7 +93,7 @@ export function makeSkyline() {
         // 눈높이 아래는 하늘색으로 녹이고, 위로 갈수록 산 색이 드러난다
         const fade = clamp((y + 0.005) / (h[i] * 0.75 + 0.01), 0, 1);
         c.copy(base).multiplyScalar(0.92 + 0.16 * lit);
-        if (top && h[i] > 0.12) c.lerp(snow, clamp((h[i] - 0.12) / 0.03, 0, 1) * 0.55); // 가장 높은 봉우리만 희끗하게
+        if (top && h[i] > 0.21) c.lerp(snow, clamp((h[i] - 0.21) / 0.03, 0, 1) * 0.55); // 가장 높은 봉우리만 희끗하게
         c.lerp(haze, 1 - (1 - l.mix) * fade * fade);
         col.set([c.r, c.g, c.b], v * 3);
       }

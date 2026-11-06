@@ -76,7 +76,7 @@ function usePeople(db: SupabaseClient) {
   return { people, leave: () => { stop.current(); return closing; } };
 }
 
-const TITLE = ["어서 놔요,", "소원 돌탑"];
+const TITLE = ["이뤄져요,", "돌탑의 숲"];
 
 // 글자마다 시작을 조금씩 늦춰 물결치게 한다. 글자 단위 span은 화면 낭독에서 숨긴다
 function WaveText({ text, start }: { text: string; start: number }) {

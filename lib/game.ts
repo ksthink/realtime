@@ -3,14 +3,14 @@ import type { CharacterRow, DropResult, NetEvents, Pose, StoneRow, TowerRow } fr
 import { Net } from "./net";
 import { formatLife, MAX_STONES, PICK_RANGE, PRAY_COOLDOWN_MS, PRAY_RANGE, STACK_RADIUS, TOWER_GAP, WISH_AT } from "./rules";
 import { playDrop, playPick, playStep, setWaterDistance, stopSound, stopStep } from "./sound";
-import { HILL, WORLD, clamp, canWade, hillBlocked, isWater, lerp, onStairs, terrainY, walkY, waterDistance } from "./terrain";
+import { HILL, WORLD, clamp, canWade, hillBlocked, isWater, lerp, onStairs, stairDip, terrainY, walkY, waterDistance } from "./terrain";
 import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
 import { makePetals } from "./three/petals";
 import { makeSkyline } from "./three/skyline";
 import { makeSplash } from "./three/splash";
 import { makePickGlow, makeStoneMesh } from "./three/stone";
-import { buildWorld } from "./three/world";
+import { buildWorld, groundAt } from "./three/world";
 import { seeThrough } from "./three/bigtree";
 
 // 소원을 빌 수 있게 된 순간(ready)과 최대 층에 닿은 순간(max)에 한 번씩 묻는다
@@ -120,7 +120,7 @@ export class Game {
       this.me.g.position.set(start.x, 0, start.z);
       this.me.yaw = start.yaw;
     }
-    this.me.baseY = walkY(this.me.g.position.x, this.me.g.position.z);
+    this.me.baseY = standY(this.me.g.position.x, this.me.g.position.z);
 
     this.root.add(this.glow.group);
 
@@ -163,7 +163,7 @@ export class Game {
     const isNew = !v;
     if (!v) {
       const mesh = makeStoneMesh(row.seed, row.radius, row.height);
-      mesh.position.set(row.x, terrainY(row.x, row.z) + row.height / 2, row.z);
+      mesh.position.set(row.x, groundAt(row.x, row.z) + row.height / 2, row.z);
       this.root.add(mesh);
       v = { row, mesh, from: null, to: mesh.position.clone(), t: 1, dur: 1, arc: 0, grow: 0, dying: false };
       this.stones.set(row.id, v);
@@ -176,7 +176,7 @@ export class Game {
     if (prev.tower_id && prev.tower_id !== row.tower_id) this.restack(prev.tower_id);
     if (row.state === "stacked" && row.tower_id) this.restack(row.tower_id);
     else if (row.state === "ground") {
-      const to = new THREE.Vector3(row.x, terrainY(row.x, row.z) + row.height / 2, row.z);
+      const to = new THREE.Vector3(row.x, groundAt(row.x, row.z) + row.height / 2, row.z);
       // 탑에서 흩어질 때는 높이 튀어 오른다
       this.moveStone(v, to, isNew ? 0 : prev.state === "stacked" ? 0.8 : 0.35, prev.state === "stacked" ? 1.4 : 0.3);
     }
@@ -197,7 +197,7 @@ export class Game {
       .filter((v) => v.row.state === "stacked" && v.row.tower_id === towerId)
       .sort((a, b) => (a.row.order_index ?? 0) - (b.row.order_index ?? 0));
     if (!list.length) return;
-    let y = terrainY(list[0].row.x, list[0].row.z);
+    let y = groundAt(list[0].row.x, list[0].row.z);
     let belowH = 0;
     for (const v of list) {
       const sink = belowH ? Math.min(v.row.height, belowH) * 0.12 : 0;
@@ -220,7 +220,7 @@ export class Game {
     if (!t) {
       const label = new TowerLabel(this.font);
       this.root.add(label.sprite);
-      t = { row, label, top: terrainY(row.x, row.z) };
+      t = { row, label, top: groundAt(row.x, row.z) };
       this.towers.set(row.id, t);
       this.restack(row.id);
     }
@@ -338,7 +338,7 @@ export class Game {
     uniforms.uTime.value += dt;
     if (this.glowOn) {
       const { x, z } = this.glowOn.mesh.position;
-      group.position.set(x, terrainY(x, z), z);
+      group.position.set(x, groundAt(x, z), z);
       const k = 0.2 + this.glowOn.row.radius * 1.5; // 돌 크기에 맞춘다. 높이는 그대로 둔다
       group.scale.set(k, 1, k);
     }
@@ -567,14 +567,17 @@ export class Game {
       fwd.normalize();
       const right = new THREE.Vector3().crossVectors(fwd, UP);
       const dir = right.multiplyScalar(ix).addScaledVector(fwd, -iz);
-      const want = (me.carrying ? 3 : 4) * dt;
+      const want = (me.carrying ? 3 : 4) * dt * Math.min(1, il); // 조이스틱을 덜 기울이면 천천히 걷는다
+      const from = me.g.position.clone();
       const moved = stepOnLand(me.g.position, dir, want);
-      const dy = Math.atan2(dir.x, dir.z) - me.yaw;
+      // 벽을 따라 미끄러질 때는 실제로 가는 쪽을 바라본다
+      const face = moved > 0 ? me.g.position.clone().sub(from) : dir;
+      const dy = Math.atan2(face.x, face.z) - me.yaw;
       me.yaw += Math.atan2(Math.sin(dy), Math.cos(dy)) * Math.min(1, dt * 12);
       // 벽에 정면으로 막혀 못 갔으면 걷지 않고 선다(제자리 걸음과 발소리를 내지 않는다)
       moving = moved > 0;
     }
-    me.baseY = walkY(me.g.position.x, me.g.position.z);
+    me.baseY = standY(me.g.position.x, me.g.position.z);
     animateBlob(me, dt, moving);
     // 발이 땅에 닿는 순간(걷기 위상이 π의 배수를 지날 때) 발소리를 낸다. 웅덩이에서는 물이 살짝 튄다
     const contact = Math.floor(me.walk / Math.PI);
@@ -609,7 +612,7 @@ export class Game {
       p.z = lerp(p.z, r.target.z, k);
       const dy = r.targetYaw - b.yaw;
       b.yaw += Math.atan2(Math.sin(dy), Math.cos(dy)) * k;
-      b.baseY = walkY(p.x, p.z);
+      b.baseY = standY(p.x, p.z);
       // 남의 발걸음은 이동 거리로 센다(걷기 위상은 내 것만 쓴다)
       r.splashD += Math.hypot(p.x - r.lastX, p.z - r.lastZ);
       r.lastX = p.x; r.lastZ = p.z;
@@ -684,7 +687,7 @@ export class Game {
       const camDist = Math.hypot(mine.row.x - this.camera.position.x, mine.row.z - this.camera.position.z);
       const width = Math.max(0.5, camDist * 0.022) * (1 + Math.sin(now * 0.003) * 0.12);
       const shaft = this.beacon.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
-      this.beacon.position.set(mine.row.x, terrainY(mine.row.x, mine.row.z), mine.row.z);
+      this.beacon.position.set(mine.row.x, groundAt(mine.row.x, mine.row.z), mine.row.z);
       shaft.scale.set(width, 1, width);
       shaft.material.uniforms.nearFade.value = clamp(camDist / 14, 0.4, 1);
       if (this.ringFor !== mine.row.id) this.buildRing(mine.row);
@@ -868,14 +871,20 @@ const round2 = (v: number) => Math.round(v * 100) / 100;
 // 네트워크 입력도 거치므로 unknown을 받는다
 const isReaction = (v: unknown): v is Reaction => (REACTIONS as readonly unknown[]).includes(v);
 
+// 캐릭터가 딛는 높이: 계단 디딤판과 얕은 물은 walkY가 정하고, 그 밖에는 눈에 보이는 땅을 딛는다
+function standY(x: number, z: number) {
+  const w = walkY(x, z);
+  return w === terrainY(x, z) - stairDip(x, z) ? groundAt(x, z) : w;
+}
+
 const blocked = (x: number, z: number) => Math.hypot(x, z) > WORLD || (isWater(x, z) && !canWade(x, z)) || hillBlocked(x, z);
-const SLIDE_STEP = Math.PI / 12; // 막히면 15°씩 돌려 가며 비켜 갈 방향을 찾는다
+const SLIDE_STEP = Math.PI / 24; // 막히면 7.5°씩 돌려 가며 비켜 갈 방향을 찾는다
 
 // dir 방향으로 dist만큼 움직이고, 실제로 움직인 거리를 돌려준다.
 // 막히면 벽을 따라 미끄러진다: 방향을 조금씩 돌리고, 돌린 만큼(cos) 덜 간다. 정면으로 부딪히면 거의 0이다
 function stepOnLand(p: THREE.Vector3, dir: THREE.Vector3, dist: number) {
   const a0 = Math.atan2(dir.x, dir.z);
-  for (let k = 0; k < 5; k++) { // 60°까지만: 그보다 꺾이면 벽을 정면으로 민 것으로 보고 멈춘다
+  for (let k = 0; k < 11; k++) { // 75°까지만: 그보다 꺾이면 벽을 정면으로 민 것으로 보고 멈춘다
     const d = dist * Math.cos(k * SLIDE_STEP);
     for (const s of k ? [1, -1] : [1]) {
       const a = a0 + s * k * SLIDE_STEP, nx = p.x + Math.sin(a) * d, nz = p.z + Math.cos(a) * d;
@@ -927,7 +936,7 @@ function makeGroundRing(cx: number, cz: number, radius: number) {
     const a = (i / seg) * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
     for (const r of [radius - width, radius + width]) {
       const x = cx + c * r, z = cz + s * r;
-      pos.push(x, terrainY(x, z) + 0.05, z);
+      pos.push(x, groundAt(x, z) + 0.05, z);
     }
     if (i < seg) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
   }

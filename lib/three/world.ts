@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { HILL, STAIR, TREADS, WATER_Y, WORLD, baseTerrainY, clamp, hillBlocked, rng, stairDip, terrainY, vnoise } from "../terrain";
+import { HILL, STAIR, TREADS, WATER_Y, WORLD, baseTerrainY, clamp, hillBlocked, rimY, rng, stairDip, terrainY, vnoise } from "../terrain";
 import { buildBigTree } from "./bigtree";
 import { WIND_DIR } from "./petals";
 import { stoneGeometry } from "./stone";
@@ -107,11 +107,23 @@ function instanced<T extends { x: number; y: number; z: number; hide?: boolean }
 
 // 땅 꼭짓점 높이·색은 꼭짓점마다 지형을 여섯 번 구해 무겁다. 처음 한 번만 구하고 인트로와 게임이 같이 쓴다
 let groundCache: { pos: Float32Array; col: Float32Array; normal: Float32Array } | null = null;
+// 격자 간격을 예전(반경 94, 260칸)과 같게 둬 예전 땅의 꼭짓점이 같은 자리에 온다
+const SEG = 372, S = ((OLD_WORLD + 14) * SEG) / 260;
+
+// 눈에 보이는 땅(삼각형 메시) 위의 높이. 지형 함수는 다리 옆면처럼 급한 곳에서 메시와 어긋나므로,
+// 땅에 놓이는 것(돌, 탑, 캐릭터)은 이 높이에 맞춰야 떠 보이거나 묻히지 않는다. 땅을 만들기 전에는 지형 함수를 쓴다
+export function groundAt(x: number, z: number) {
+  if (!groundCache) return terrainY(x, z) - stairDip(x, z);
+  const h = (2 * S) / SEG, fx = clamp((x + S) / h, 0, SEG - 1e-6), fz = clamp((z + S) / h, 0, SEG - 1e-6);
+  const ix = Math.floor(fx), iz = Math.floor(fz), u = fx - ix, v = fz - iz, p = groundCache.pos;
+  const y = (i: number, k: number) => p[(k * (SEG + 1) + i) * 3 + 1];
+  const a = y(ix, iz), b = y(ix, iz + 1), c = y(ix + 1, iz + 1), d = y(ix + 1, iz);
+  // PlaneGeometry는 칸마다 (a, b, d)와 (b, c, d) 두 삼각형으로 나눈다
+  return u + v <= 1 ? a + (d - a) * u + (b - a) * v : c + (b - c) * (1 - u) + (d - c) * (1 - v);
+}
 
 export function buildWorld(root: THREE.Object3D) {
   // 땅: 높이·경사에 따라 색이 변한다
-  // 격자 간격을 예전(반경 94, 260칸)과 같게 둬 예전 땅의 꼭짓점이 같은 자리에 온다
-  const SEG = 372, S = ((OLD_WORLD + 14) * SEG) / 260;
   const geo = new THREE.PlaneGeometry(S * 2, S * 2, SEG, SEG);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color();
@@ -125,12 +137,15 @@ export function buildWorld(root: THREE.Object3D) {
       const x = pos.getX(i), z = pos.getZ(i), y = terrainY(x, z);
       pos.setY(i, y - stairDip(x, z));
       // 바위색·눈은 동산을 뺀 땅으로 정해 동산은 풀빛으로 남는다
-      const by = baseTerrainY(x, z), slope = Math.hypot(baseTerrainY(x + 0.5, z) - baseTerrainY(x - 0.5, z), baseTerrainY(x, z + 0.5) - baseTerrainY(x, z - 0.5));
+      // 가장자리 산줄기는 기울기를 반만 쳐서 대부분 풀빛 산자락으로 두고 아주 가파른 곳만 바위색을 띤다
+      const rocky = (px: number, pz: number) => baseTerrainY(px, pz) - rimY(px, pz) * 0.5;
+      const by = baseTerrainY(x, z), slope = Math.hypot(rocky(x + 0.5, z) - rocky(x - 0.5, z), rocky(x, z + 0.5) - rocky(x, z - 0.5));
       c.copy(grass).lerp(grass2, vnoise(x * 0.3, z * 0.3));
       if (y < WATER_Y + 0.6) c.lerp(sand, clamp((WATER_Y + 0.6 - y) / 0.6, 0, 1));
       if (y < WATER_Y) c.lerp(lakebed, clamp((WATER_Y - y) / 2.5, 0, 1)); // 호수 바닥: 깊을수록 모래가 조금 어두워진다
       if (slope > 0.7) c.lerp(rock, clamp((slope - 0.7) / 0.8, 0, 1));
-      if (by > 21) c.lerp(snow, clamp((by - 21) / 4, 0, 1)); // 가장자리 산줄기의 높은 봉우리에만 눈
+      const sy = by - rimY(x, z); // 가장자리 산줄기에는 눈을 얹지 않는다
+      if (sy > 5.5) c.lerp(snow, clamp((sy - 5.5) / 2, 0, 1));
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     }
     geo.computeVertexNormals();
