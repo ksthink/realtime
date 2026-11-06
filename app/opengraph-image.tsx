@@ -33,9 +33,9 @@ function Malang() {
       <div style={{ position: "absolute", left: 104, top: 386, width: 50, height: 24, borderRadius: 12, background: limb }} />
       <div style={{ position: "absolute", left: 180, top: 386, width: 50, height: 24, borderRadius: 12, background: limb }} />
       {/* 팔: 한쪽은 흔든다 */}
-      <div style={{ position: "absolute", left: -6, top: 150, width: 90, height: 24, borderRadius: 12, background: limb, transform: "rotate(28deg)" }} />
-      <div style={{ position: "absolute", left: 256, top: 92, width: 96, height: 24, borderRadius: 12, background: limb, transform: "rotate(-52deg)" }} />
-      <div style={{ position: "absolute", left: 318, top: 30, width: 40, height: 40, borderRadius: 20, background: limb }} />
+      <div style={{ position: "absolute", left: -40, top: 186, width: 90, height: 24, borderRadius: 12, background: limb, transform: "rotate(28deg)" }} />
+      <div style={{ position: "absolute", left: 278, top: 108, width: 96, height: 24, borderRadius: 12, background: limb, transform: "rotate(-52deg)" }} />
+      <div style={{ position: "absolute", left: 340, top: 62, width: 40, height: 40, borderRadius: 20, background: limb }} />
       {/* 몸통 */}
       <div style={{ position: "absolute", left: 25, top: 20, width: 290, height: 300, borderRadius: "50%", background: "radial-gradient(circle at 35% 28%, #f6dde3 0%, #e7c3cf 42%, #b8c3de 100%)", boxShadow: "0 18px 36px rgba(74,63,82,0.18)" }} />
       {/* 얼굴 */}
@@ -53,10 +53,11 @@ export default async function OpengraphImage() {
   const font = await readFile(join(process.cwd(), "public/font/ONE-Mobile-Title.ttf"));
   return new ImageResponse(
     (
-      <div style={{ width: "100%", height: "100%", display: "flex", position: "relative", background: "linear-gradient(180deg, #dfe8f2 0%, #e8eef0 58%, #cfe0b9 58%, #b9cf9d 100%)", fontFamily: "ONE Mobile Title" }}>
-        {/* 먼 산과 숲 */}
-        <div style={{ position: "absolute", left: -80, top: 250, width: 620, height: 260, borderRadius: "50%", background: "#c9d6e2" }} />
-        <div style={{ position: "absolute", left: 420, top: 270, width: 760, height: 240, borderRadius: "50%", background: "#cfdbe6" }} />
+      <div style={{ width: "100%", height: "100%", display: "flex", position: "relative", background: "linear-gradient(180deg, #dbe5f0 0%, #e8eef0 100%)", fontFamily: "ONE Mobile Title" }}>
+        {/* 먼 산(어렴풋하게), 땅, 숲 */}
+        <div style={{ position: "absolute", left: -120, top: 230, width: 700, height: 260, borderRadius: "50%", background: "#cdd8e4" }} />
+        <div style={{ position: "absolute", left: 470, top: 250, width: 820, height: 240, borderRadius: "50%", background: "#d3dde8" }} />
+        <div style={{ position: "absolute", left: 0, top: 352, width: 1200, height: 278, background: "linear-gradient(180deg, #cfe0b9 0%, #b9cf9d 100%)" }} />
         <div style={{ position: "absolute", left: 0, top: 320, width: 1200, height: 60, display: "flex" }}>
           {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => (
             <div key={i} style={{ width: 120, height: 70, marginLeft: i ? -20 : -10, borderRadius: "50%", background: i % 2 ? "#a9c78f" : "#9dbd85" }} />
