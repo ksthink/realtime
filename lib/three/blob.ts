@@ -237,21 +237,32 @@ export function makeBlob(init: BlobInit, font: string): Blob {
     else p.position.set(s * W * 0.45, armY, 0.05);
     p.add(makeTube([[0, 0, 0], [s * 0.14 * armL, -0.05, 0.06], [s * 0.24 * armL, -0.18, 0.1]], 0.045, limb));
     const skin = new THREE.MeshStandardMaterial({ color: limb.clone().lerp(new THREE.Color("#ffe3d2"), 0.55), roughness: 0.9 });
+    // 손: 팔 끝에서 팔이 뻗은 방향으로 늘어뜨린다. 손바닥은 몸 쪽을 보고, 손가락 셋은 아래로 살짝 오므리며, 엄지는 앞쪽에 따로 붙는다.
+    // 손 안에서 +y가 손목 → 손끝, +x가 손등(바깥). 앞은 오른팔에서 -z, 왼팔에서 +z라 엄지는 -s 쪽에 둔다
     const hand = new THREE.Group();
-    const tip = new THREE.Vector3(s * 0.26 * armL, -0.2, 0.11);
-    hand.position.copy(tip);
-    hand.rotation.z = s * 0.5;
+    const wrist = new THREE.Vector3(s * 0.24 * armL, -0.18, 0.1);
+    const along = wrist.clone().sub(new THREE.Vector3(s * 0.14 * armL, -0.05, 0.06)).normalize();
+    hand.position.copy(wrist).addScaledVector(along, 0.03);
+    const out = new THREE.Vector3(s, 0, 0).addScaledVector(along, -s * along.x).normalize(); // 팔 방향에 수직인 바깥쪽
+    hand.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(out, along, new THREE.Vector3().crossVectors(out, along)));
     hand.scale.setScalar(handS);
-    const palm = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 10), skin);
-    palm.scale.set(1, 1.15, 0.6);
+    const palm = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10), skin);
+    palm.position.y = 0.06;
+    palm.scale.set(0.62, 1.05, 1);
     palm.castShadow = true;
     hand.add(palm);
     for (let i = -1; i <= 1; i++) {
-      const f = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 6), skin);
-      f.position.set(s * (0.055 + i * 0.02), 0.095 - Math.abs(i) * 0.02, i * 0.045);
-      f.scale.set(1, 1.6, 1);
+      const f = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), skin);
+      f.position.set(-0.012, 0.135 - Math.abs(i) * 0.012, i * 0.038);
+      f.rotation.z = 0.35; // 손바닥 쪽(몸 쪽)으로 살짝 굽힌다
+      f.scale.set(0.9, 1.5, 0.9);
       hand.add(f);
     }
+    const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), skin);
+    thumb.position.set(-0.02, 0.05, -s * 0.078);
+    thumb.rotation.x = -s * 0.7; // 앞으로 비스듬히
+    thumb.scale.set(0.9, 1.45, 0.9);
+    hand.add(thumb);
     p.add(hand);
     g.add(p);
     arms.push(p);
