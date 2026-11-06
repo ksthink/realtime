@@ -242,24 +242,29 @@ export function makeBlob(init: BlobInit, font: string): Blob {
     const hand = new THREE.Group();
     const wrist = new THREE.Vector3(s * 0.24 * armL, -0.18, 0.1);
     const along = wrist.clone().sub(new THREE.Vector3(s * 0.14 * armL, -0.05, 0.06)).normalize();
-    hand.position.copy(wrist).addScaledVector(along, 0.03);
+    hand.position.copy(wrist);
+    // 팔 관은 끝이 뚫려 있어, 손목에 팔 굵기만 한 공을 붙여 막고 손바닥이 그 위에 겹치게 해 팔과 손이 이어져 보이게 한다
+    const cuff = new THREE.Mesh(new THREE.SphereGeometry(0.047, 10, 8), new THREE.MeshStandardMaterial({ color: limb, roughness: 0.95 }));
+    cuff.position.copy(wrist);
+    cuff.castShadow = true;
+    p.add(cuff);
     const out = new THREE.Vector3(s, 0, 0).addScaledVector(along, -s * along.x).normalize(); // 팔 방향에 수직인 바깥쪽
     hand.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(out, along, new THREE.Vector3().crossVectors(out, along)));
     hand.scale.setScalar(handS);
     const palm = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10), skin);
-    palm.position.y = 0.06;
+    palm.position.y = 0.045;
     palm.scale.set(0.62, 1.05, 1);
     palm.castShadow = true;
     hand.add(palm);
     for (let i = -1; i <= 1; i++) {
       const f = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), skin);
-      f.position.set(-0.012, 0.135 - Math.abs(i) * 0.012, i * 0.038);
+      f.position.set(-0.012, 0.12 - Math.abs(i) * 0.012, i * 0.038);
       f.rotation.z = 0.35; // 손바닥 쪽(몸 쪽)으로 살짝 굽힌다
       f.scale.set(0.9, 1.5, 0.9);
       hand.add(f);
     }
     const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), skin);
-    thumb.position.set(-0.02, 0.05, -s * 0.078);
+    thumb.position.set(-0.02, 0.035, -s * 0.078);
     thumb.rotation.x = -s * 0.7; // 앞으로 비스듬히
     thumb.scale.set(0.9, 1.45, 0.9);
     hand.add(thumb);
