@@ -12,6 +12,12 @@ button { cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 
 .stage { position: fixed; inset: 0; touch-action: none; }
+/* 게임·빚기·인트로 화면은 앱처럼: 길게 누르거나 끌어도 글자가 선택돼 파랗게 칠해지거나, 그림이 끌려 나오거나, 복사 메뉴가 뜨지 않게 한다.
+   글자를 써야 하는 입력칸만 예외 */
+.stage, .stage *, .intro, .intro * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none; -webkit-tap-highlight-color: transparent; }
+.stage input, .stage textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+/* 조작 방법 창은 내용이 길면 손가락으로 스크롤한다(.stage 전체는 touch-action: none) */
+.help { touch-action: pan-y; }
 .center { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px; text-align: center; }
 .center h1 { margin: 0; font-size: 28px; font-weight: 400; }
 .center p { margin: 0; color: var(--muted); }
