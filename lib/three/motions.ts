@@ -100,15 +100,15 @@ export function walkPose(pose: Pose, d: Dims, ch: Blob) {
   pose.lift = 0;
   pose.hold.lv(d.headTop);
   pose.grip = 0;
-  // 팔: 반대쪽 다리와 함께 앞뒤로. 앞으로 갈 때 팔꿈치가 더 굽는다
-  const sw = 0.24 * d.armLen * m;
+  // 팔: 반대쪽 다리와 함께 어깨를 축으로 앞뒤로 흔든다(거의 곧게). 앞으로 갈 때만 팔꿈치가 조금 굽는다
   for (let i = 0; i < 2; i++) {
-    const s = i ? 1 : -1, hp = pose.hands[i], r = d.hang[i];
-    const z = sw * (i ? 1 : -1) * Math.cos(ch.walk), fwd = Math.max(0, z) / (sw || 1);
-    hp.p.l(r.x, r.y + 0.1 * d.armLen * fwd * m, r.z + z);
-    hp.f.l(s * 0.25, -1, 0.2 + 1.2 * z);
+    const s = i ? 1 : -1, hp = pose.hands[i], r = d.hang[i], sh = d.shoulder[i];
+    const th = 0.38 * m * (i ? 1 : -1) * Math.cos(ch.walk), c = Math.cos(th), sn = Math.sin(th);
+    const k = 1 - 0.12 * Math.max(0, th) / 0.38, vy = r.y - sh.y, vz = r.z - sh.z;
+    hp.p.l(sh.x + (r.x - sh.x) * k, sh.y + (vy * c + vz * sn) * k, sh.z + (vz * c - vy * sn) * k);
+    hp.f.l(s * 0.25, -c, sn + 0.15);
     hp.o.l(s, 0, 0);
-    hp.pole.l(s * 0.45, 0, -1);
+    hp.pole.l(s * 0.3, 0, -1);
   }
 }
 
@@ -192,7 +192,7 @@ export function handPose(pose: Pose, d: Dims, ch: Blob) {
     // 0~0.5 앞으로 내리며 무릎 굽힘 → 손을 벌려 놓고 → 0.6~1 제자리
     const down = ease(u / 0.5), rel = ease((u - 0.46) / 0.14), back = ease((u - 0.6) / 0.4);
     const c = down * (1 - back);
-    pose.grip = k * (1 - rel); // 손을 벌릴 때까지 돌은 손 사이에
+    pose.grip = k; // 내려놓은 자리(손 사이)에 둔다. 서버 응답이 오면 game이 돌을 땅/탑으로 옮긴다
     for (let i = 0; i < 2; i++) {
       const h = _hA, base = _hB;
       mixHand(base, pose.hands[i], 1);

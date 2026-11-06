@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { lerp, rng } from "../terrain";
 import { type Dims, type Pose, handPose, idlePose, makePose, prayPose, reactionPose, walkPose } from "./motions";
-import { type Rig, bodyProfile, buildRig, footGeometry, handGeometry, orientFoot, orientHand, pushOut, radiusAt, solve } from "./rig";
+import { type Rig, bodyProfile, buildRig, footGeometry, handGeometry, orientFoot, orientHand, pushOut, solve } from "./rig";
 
 // ── 몸통: 구 위상을 공유하는 정점. 네트워크로는 고유 정점만 int16으로 보낸다 (약 6.5KB) ──
 const DETAIL = 8;
@@ -196,7 +196,6 @@ export function makeBlob(init: BlobInit, font: string): Blob {
   if (mouthKind === 1) mouth.rotateZ(Math.PI);
 
   const profile = bodyProfile(body, H, legLen);
-  const side = (y: number, s: number) => radiusAt(profile, y, s * Math.PI / 2); // 몸 공간 높이 y에서 옆 겉면까지
 
   // 엉덩이: 아래에서 위로 쏴서 바닥면을 찾고 조금 안쪽에 둔다(몸 공간)
   const legX = Math.min(W * 0.3, 0.14 + r() * 0.12);
@@ -224,8 +223,10 @@ export function makeBlob(init: BlobInit, font: string): Blob {
     const p = h?.face ? h.point.clone().addScaledVector(h.face.normal, -0.03) : new THREE.Vector3(s * W * 0.45 * ca, armY, W * 0.45 * sa);
     p.y -= legLen;
     shoulder.push(p);
-    const hy = p.y - armLen * 0.9;
-    hang.push(new THREE.Vector3(s * (side(hy, s) + palmT + 0.08), hy, p.z + 0.05));
+    // 차렷 손: 어깨에서 아래·조금 밖·조금 앞으로 거의 다 뻗은 자리(팔꿈치는 아주 살짝만 굽는다). 몸에 묻히면 밖으로 밀고 다시 맞춘다
+    const reach = armLen * 0.97 + palm, hv = new THREE.Vector3(s * 0.3, -1, 0.15).normalize().multiplyScalar(reach).add(p);
+    for (let k = 0; k < 3; k++) pushOut(profile, hv, palmT + 0.03).sub(p).setLength(reach).add(p);
+    hang.push(hv);
     // 얼굴 가리기: 손이 닿는 범위의 가장 앞쪽 표면보다 띄워서 묻히지 않게 한다
     const coverX = s * (eyeX + 0.03);
     let front = -Infinity;
