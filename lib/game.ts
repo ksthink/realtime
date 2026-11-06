@@ -40,7 +40,11 @@ const FOG_GROUND = [48, 150, 260], FOG_TOP = [110, 300, 320];
 // 탑 푯말: 가까이(LABEL_NEAR 안)는 내용 전체, 조금 떨어지면 「…」, 멀면 안 보인다.
 // 나타나는 거리와 사라지는 거리를 달리 둬 경계에서 깜빡이지 않게 한다. 내 탑도 같은 규칙이다
 const LABEL_NEAR = 2, LABEL_NEAR_OUT = 2.5, LABEL_FAR = 12, LABEL_FAR_OUT = 13;
-const LABEL_FADE = 0.18; // 단계가 바뀔 때 사라졌다 나타나는 시간(초)
+const LABEL_FADE = 0.18;
+// 시야각(도). 가로 화면은 세로 시야각 FOV_MIN을 쓰고, 화면이 좁아질수록(휴대폰 세로) 가로로 FOV_WIDE만큼 보이도록
+// 세로 시야각을 넓힌다. 너무 넓으면 가장자리가 늘어나 보여 FOV_MAX에서 멈춘다
+const FOV_MIN = 50, FOV_WIDE = 60, FOV_MAX = 76;
+const PORTRAIT_PULL = 1.3; // 세로 화면에서는 카메라를 이만큼 더 뒤로 빼 양옆이 더 보이게 한다 // 단계가 바뀔 때 사라졌다 나타나는 시간(초)
 const PICK_SWITCH_GAIN = 0.15; // 다른 돌이 이만큼(미터) 더 가까워야 대상을 바꾼다. 거리가 비슷한 돌 사이에서 깜빡이지 않게 한다
 const GLOW_FADE = 0.12; // 대상 표시가 사라지거나 나타나는 시간(초)
 const TOUCH_QUERY = "(hover: none), (pointer: coarse)"; // globals.css의 모바일 조건과 같다
@@ -743,11 +747,13 @@ export class Game {
   private updateCamera(dt: number) {
     const p = this.me.g.position.clone();
     if (isReaction(this.me.state)) p.y = this.me.baseY; // 앉거나 뛰어도 카메라는 지면 높이를 본다
+    // 가로 화면은 그대로, 세로로 좁아질수록 조금씩 더 뒤로 뺀다(정사각형 1, 휴대폰 세로 약 PORTRAIT_PULL)
+    const dist = this.orbitDist * lerp(1, PORTRAIT_PULL, clamp((1 - this.camera.aspect) / 0.55, 0, 1));
     const want = this.camMode === 0
       ? new THREE.Vector3(
-          Math.sin(this.orbitYaw) * this.orbitDist * Math.cos(this.orbitPitch),
-          this.orbitDist * Math.sin(this.orbitPitch) + 0.8,
-          Math.cos(this.orbitYaw) * this.orbitDist * Math.cos(this.orbitPitch),
+          Math.sin(this.orbitYaw) * dist * Math.cos(this.orbitPitch),
+          dist * Math.sin(this.orbitPitch) + 0.8,
+          Math.cos(this.orbitYaw) * dist * Math.cos(this.orbitPitch),
         ).add(p)
       : new THREE.Vector3(p.x, p.y + 16, p.z + 4);
     want.y = Math.max(want.y, terrainY(want.x, want.z) + 1.2);
@@ -758,7 +764,15 @@ export class Game {
     this.camera.lookAt(this.camLook);
     seeThrough.set(this.camLook);
     this.updateFog(dt);
+    this.updateFov();
     this.skyline.update(this.camera);
+  }
+
+  private updateFov() {
+    const cam = this.camera, rad = Math.PI / 180;
+    const need = (2 * Math.atan(Math.tan((FOV_WIDE / 2) * rad) / cam.aspect)) / rad;
+    const fov = Math.round(clamp(need, FOV_MIN, FOV_MAX) * 10) / 10;
+    if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); }
   }
 
   // 높이 올라갈수록 안개를 걷어 동산 꼭대기에서 마을 끝까지 보이게 한다. 보통 땅은 3.5m 아래다
