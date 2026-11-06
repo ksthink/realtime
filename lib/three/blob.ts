@@ -143,6 +143,7 @@ export type Blob = {
 export type BlobInit = { seed: number; name: string; top: string; bottom: string; body: string };
 
 const SHOULDER_FWD = 0.5; // 어깨가 옆에서 앞으로 돌아간 각(라디안)
+const SHOULDER_IN = 0.1; // 어깨를 겉면에서 안쪽으로 묻는 깊이. 팔 굵기(0.045)보다 깊어야 팔이 옆으로 뻗어도 뿌리가 안 보인다
 
 export function makeBlob(init: BlobInit, font: string): Blob {
   const r = rng(init.seed);
@@ -212,16 +213,20 @@ export function makeBlob(init: BlobInit, font: string): Blob {
 
   // 어깨: 옆에서 안쪽으로 쏴서 찾고 겉면보다 조금 안에 둔다(몸 공간)
   const armY = legLen + H * (0.52 + r() * 0.16), armL = 0.8 + r() * 0.5, handS = 0.8 + r() * 0.5;
-  const armLen = 0.45 * armL + 0.28;
+  // 어깨는 겉면보다 SHOULDER_IN만큼 안쪽에 묻는다. 그만큼 팔을 늘려 보이는 길이는 그대로
+  const armLen = 0.45 * armL + 0.28 + SHOULDER_IN - 0.03;
   const palm = 0.045 * handS, palmT = 0.0465 * handS;
   const shoulder: THREE.Vector3[] = [], hang: THREE.Vector3[] = [], cover: THREE.Vector3[] = [];
   const coverY = eyeY; // 눈을 가린다
-  for (const s of [-1, 1]) {
-    // 옆에서 앞쪽으로 SHOULDER_FWD만큼 돌린 방향에 붙인다. 손이 가슴·얼굴 앞으로 올 때 팔이 둥근 몸을 덜 파고든다
-    const sa = Math.sin(SHOULDER_FWD), ca = Math.cos(SHOULDER_FWD);
+  // 옆에서 앞쪽으로 SHOULDER_FWD만큼 돌린 방향에 붙인다. 손이 가슴·얼굴 앞으로 올 때 팔이 둥근 몸을 덜 파고든다
+  // 양쪽 겉면까지의 거리 중 가까운 쪽에 맞춰 좌우 대칭으로 둔다(한쪽이 불룩해도 팔이 같은 자리에 붙게)
+  const sa = Math.sin(SHOULDER_FWD), ca = Math.cos(SHOULDER_FWD);
+  const shoulderR = Math.min(...[-1, 1].map((s) => {
     const h = hit(s * ca * 5, armY, sa * 5, -s * ca, 0, -sa);
-    const p = h?.face ? h.point.clone().addScaledVector(h.face.normal, -0.03) : new THREE.Vector3(s * W * 0.45 * ca, armY, W * 0.45 * sa);
-    p.y -= legLen;
+    return h ? h.point.x * s * ca + h.point.z * sa : W * 0.45;
+  })) - SHOULDER_IN;
+  for (const s of [-1, 1]) {
+    const p = new THREE.Vector3(s * ca * shoulderR, armY - legLen, sa * shoulderR);
     shoulder.push(p);
     // 차렷 손: 어깨에서 아래·조금 밖·조금 앞으로 거의 다 뻗은 자리(팔꿈치는 아주 살짝만 굽는다). 몸에 묻히면 밖으로 밀고 다시 맞춘다
     const reach = armLen * 0.97 + palm, hv = new THREE.Vector3(s * 0.3, -1, 0.15).normalize().multiplyScalar(reach).add(p);
