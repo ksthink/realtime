@@ -12,7 +12,7 @@ export const rng = (seed: number) => {
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-export const WORLD = 80; // 걸을 수 있는 반경
+export const WORLD = 120; // 걸을 수 있는 반경
 export const WATER_Y = -1.55; // 개울 수면 높이
 
 const hashN = (x: number, y: number) => {
@@ -39,7 +39,24 @@ const BRIDGES = [
   { x: 38, river: 1, minus: 11.5, plus: 7.5 },
 ];
 
-export function terrainY(x: number, z: number) {
+// 동산: 꼭대기(plateauR 안)가 topY로 평평한 언덕. stairs는 꼭대기에서 계단이 뻗는 방향(라디안).
+// 반경 r 밖에서는 땅이 그대로이고, 비탈은 계단으로만 오르내린다
+export const HILL = { x: 28, z: -12, r: 18, plateauR: 6.5, topY: 7.5, stairs: [2.74, -0.4], stairHalf: 0.55 };
+// 비탈은 부드럽게 오르고, 계단 길은 고른 경사로 곧게 오른다. 길 옆 1.6~3.4m에서 둘을 섞는다
+const hillW = (x: number, z: number) => {
+  const dx = x - HILL.x, dz = z - HILL.z;
+  const t = clamp((HILL.r - Math.hypot(dx, dz)) / (HILL.r - HILL.plateauR), 0, 1);
+  let w = t * t * (3 - 2 * t);
+  for (const a of HILL.stairs) {
+    if (dx * Math.cos(a) + dz * Math.sin(a) <= 0) continue;
+    const k = clamp((Math.abs(dz * Math.cos(a) - dx * Math.sin(a)) - 1.6) / 1.8, 0, 1);
+    w += (t - w) * (1 - k * k * (3 - 2 * k));
+  }
+  return w;
+};
+
+// 동산을 얹기 전 땅
+export function baseTerrainY(x: number, z: number) {
   const r = Math.hypot(x, z);
   let h = fbm(x * 0.04, z * 0.04) * 6.5 + fbm(x * 0.16 + 3, z * 0.16 + 8) * 0.7;
   const dvs = RIVERS.map((f) => z - f(x));
@@ -49,6 +66,17 @@ export function terrainY(x: number, z: number) {
   if (r > WORLD - 6) h += Math.pow((r - (WORLD - 6)) / 6, 2) * 7; // 가장자리 산
   for (const b of BRIDGES) if (Math.abs(x - b.x) < 1.6 && dvs[b.river] > -b.minus && dvs[b.river] < b.plus) h = Math.max(h, WATER_Y + 0.45); // 돌다리
   return h;
+}
+export function terrainY(x: number, z: number) {
+  const h = baseTerrainY(x, z), w = hillW(x, z);
+  return w > 0 ? h + (HILL.topY - h) * w : h;
+}
+// 동산 비탈과 꼭대기 나무 밑동이면 true. 꼭대기 울타리 안, 계단 위, 높이가 거의 없는 산자락은 걸을 수 있다
+export function hillBlocked(x: number, z: number) {
+  const dx = x - HILL.x, dz = z - HILL.z, d = Math.hypot(dx, dz);
+  if (d < 1.1) return true;
+  if (d < HILL.plateauR - 0.45 || hillW(x, z) < 0.06) return false;
+  return !HILL.stairs.some((a) => dx * Math.cos(a) + dz * Math.sin(a) > 0 && Math.abs(dz * Math.cos(a) - dx * Math.sin(a)) < HILL.stairHalf);
 }
 export const isWater = (x: number, z: number) => terrainY(x, z) < WATER_Y + 0.12;
 

@@ -3,12 +3,13 @@ import type { CharacterRow, DropResult, NetEvents, Pose, StoneRow, TowerRow } fr
 import { Net } from "./net";
 import { formatLife, MAX_STONES, PICK_RANGE, PRAY_COOLDOWN_MS, PRAY_RANGE, STACK_RADIUS, TOWER_GAP, WISH_AT } from "./rules";
 import { playDrop, playPick, playStep, setWaterDistance, stopSound, stopStep } from "./sound";
-import { WORLD, clamp, isWater, lerp, terrainY, waterDistance } from "./terrain";
+import { HILL, WORLD, clamp, hillBlocked, isWater, lerp, terrainY, waterDistance } from "./terrain";
 import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
 import { makePetals } from "./three/petals";
 import { makePickGlow, makeStoneMesh } from "./three/stone";
 import { buildWorld } from "./three/world";
+import { seeThrough } from "./three/bigtree";
 
 // 소원을 빌 수 있게 된 순간(ready)과 최대 층에 닿은 순간(max)에 한 번씩 묻는다
 export type WishPrompt = "ready" | "max";
@@ -32,6 +33,8 @@ type Floater = { sprite: THREE.Sprite; t: number };
 const CAMS = ["따라가기", "하늘에서"];
 const SUN_OFF = new THREE.Vector3(8, 14, 6);
 const UP = new THREE.Vector3(0, 1, 0);
+// 안개(가까이, 멀리)와 카메라가 그리는 거리. 땅에서는 앞의 값, 동산 꼭대기에서는 뒤의 값으로 천천히 바뀐다
+const FOG_GROUND = [48, 150, 260], FOG_TOP = [110, 300, 320];
 const LABEL_RANGE = 10; // 남의 탑 푯말은 이 거리 안에서만 보인다. 내 탑은 항상 보인다
 const PICK_SWITCH_GAIN = 0.15; // 다른 돌이 이만큼(미터) 더 가까워야 대상을 바꾼다. 거리가 비슷한 돌 사이에서 깜빡이지 않게 한다
 const GLOW_FADE = 0.12; // 대상 표시가 사라지거나 나타나는 시간(초)
@@ -82,6 +85,7 @@ export class Game {
   private glowK = 0;
   private waterT = 0;
   private lastContact = 0;
+  private fogK = 0;
 
   constructor(
     private scene: THREE.Scene,
@@ -348,7 +352,7 @@ export class Game {
   private dropPoint() {
     const p = this.me.g.position;
     const x = p.x + Math.sin(this.me.yaw) * 0.7, z = p.z + Math.cos(this.me.yaw) * 0.7;
-    return !isWater(x, z) && Math.hypot(x, z) < WORLD ? { x, z } : { x: p.x, z: p.z };
+    return !isWater(x, z) && !hillBlocked(x, z) && Math.hypot(x, z) < WORLD ? { x, z } : { x: p.x, z: p.z };
   }
   private dropKind(): HudState["dropKind"] {
     if (!this.myHeld) return null;
@@ -706,6 +710,20 @@ export class Game {
     this.camera.position.copy(this.camPos);
     this.camLook.lerp(new THREE.Vector3(p.x, p.y + 1.2, p.z), k);
     this.camera.lookAt(this.camLook);
+    seeThrough.set(this.camLook);
+    this.updateFog(dt);
+  }
+
+  // 높이 올라갈수록 안개를 걷어 동산 꼭대기에서 마을 끝까지 보이게 한다. 보통 땅은 3.5m 아래다
+  private updateFog(dt: number) {
+    const t = clamp((this.me.baseY - 3.5) / (HILL.topY - 3.5), 0, 1), want = t * t * (3 - 2 * t);
+    this.fogK += (want - this.fogK) * (1 - Math.exp(-dt * 1.2));
+    if (Math.abs(this.fogK - want) < 1e-4) this.fogK = want;
+    const fog = this.scene.fog as THREE.Fog, k = this.fogK;
+    fog.near = lerp(FOG_GROUND[0], FOG_TOP[0], k);
+    fog.far = lerp(FOG_GROUND[1], FOG_TOP[1], k);
+    const far = lerp(FOG_GROUND[2], FOG_TOP[2], k);
+    if (this.camera.far !== far) { this.camera.far = far; this.camera.updateProjectionMatrix(); }
   }
 
   private sendPoseNow() {
@@ -819,7 +837,7 @@ const isReaction = (v: unknown): v is Reaction => (REACTIONS as readonly unknown
 function stepOnLand(p: THREE.Vector3, dir: THREE.Vector3, dist: number) {
   const tryMove = (dx: number, dz: number) => {
     const nx = p.x + dx, nz = p.z + dz;
-    if (Math.hypot(nx, nz) > WORLD || isWater(nx, nz)) return false;
+    if (Math.hypot(nx, nz) > WORLD || isWater(nx, nz) || hillBlocked(nx, nz)) return false;
     p.x = nx; p.z = nz;
     return true;
   };

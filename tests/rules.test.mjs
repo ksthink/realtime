@@ -49,6 +49,14 @@ test("첫돌은 탑을 만들고, 근처면 쌓이고, 멀면 버려져 다시 �
   clean(p);
 });
 
+test("반경 120m 안에는 놓을 수 있고, 밖은 거부된다", async () => {
+  const p = await player("가장자리");
+  assert.equal((await carryAndDrop(p, stone(), 0, 100)).result, "first");
+  clean(p);
+  assert.equal((await carryAndDrop(p, stone(), 0, 121)).result, "rejected");
+  clean(p);
+});
+
 test("한 사람은 돌을 하나만 들고, 같은 돌은 먼저 집은 사람만 갖는다", async () => {
   const [a, b] = [await player("가"), await player("나")];
   const id = stone();
@@ -238,7 +246,7 @@ test("돌이 자동으로 채워지고, 사라진 사람이 든 돌은 풀려난
   sql(`update world_state set last_tick = 'epoch'`);
   await rpc(q, "world_tick");
   assert.equal(row(id), "ground|f|t");
-  assert.ok(Number(sql(`select count(*) from stones where state='ground'`)) >= 240);
+  assert.ok(Number(sql(`select count(*) from stones where state='ground'`)) >= 490);
   // 크기가 범위 전체에 고르게 퍼져 있어야 쌓기 판정이 의미 있다
   sql(`delete from stones where state='ground'`);
   sql(`update world_state set last_tick = 'epoch'`);
