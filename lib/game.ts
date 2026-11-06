@@ -3,7 +3,7 @@ import type { CharacterRow, DropResult, NetEvents, Pose, StoneRow, TowerRow } fr
 import { Net } from "./net";
 import { formatLife, MAX_STONES, PICK_RANGE, PRAY_COOLDOWN_MS, PRAY_RANGE, STACK_RADIUS, TOWER_GAP, WISH_AT } from "./rules";
 import { playDrop, playPick, playStep, setWaterDistance, stopSound, stopStep } from "./sound";
-import { HILL, WORLD, clamp, hillBlocked, inPuddle, isWater, lerp, onStairs, terrainY, walkY, waterDistance } from "./terrain";
+import { HILL, WORLD, clamp, canWade, hillBlocked, isWater, lerp, onStairs, terrainY, walkY, waterDistance } from "./terrain";
 import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
 import { makePetals } from "./three/petals";
@@ -591,7 +591,7 @@ export class Game {
 
   private splashAt(b: Blob) {
     const p = b.g.position;
-    if (inPuddle(p.x, p.z)) this.splash.emit(p.x, p.z, b.yaw);
+    if (canWade(p.x, p.z)) this.splash.emit(p.x, p.z, b.yaw);
   }
 
   private updateRemotes(dt: number) {
@@ -865,7 +865,7 @@ const isReaction = (v: unknown): v is Reaction => (REACTIONS as readonly unknown
 function stepOnLand(p: THREE.Vector3, dir: THREE.Vector3, dist: number) {
   const tryMove = (dx: number, dz: number) => {
     const nx = p.x + dx, nz = p.z + dz;
-    if (Math.hypot(nx, nz) > WORLD || (isWater(nx, nz) && !inPuddle(nx, nz)) || hillBlocked(nx, nz)) return false;
+    if (Math.hypot(nx, nz) > WORLD || (isWater(nx, nz) && !canWade(nx, nz)) || hillBlocked(nx, nz)) return false;
     p.x = nx; p.z = nz;
     return true;
   };

@@ -141,14 +141,20 @@ const PUDDLES = [
   [-43.0, -54.6, 3.7], [-25.4, 91.7, 5.5], [-17.5, 20.7, 2.5], [6.2, 102.6, 14.4], [11.5, 90.8, 2.5], [28.4, 106.1, 1.0],
   [52.0, -93.9, 13.2], [56.5, -19.1, 6.5], [73.7, -71.5, 13.8], [88.3, -50.6, 0.7], [92.8, -44.5, 3.8], [102.2, -45.5, 12.5],
 ];
-export const inPuddle = (x: number, z: number) => isWater(x, z) && PUDDLES.some(([px, pz, r]) => (x - px) ** 2 + (z - pz) ** 2 < r * r);
+// 걸어서 지나갈 수 있는 물: 웅덩이 전체와, 강·호수라도 깊이 WADE_DEPTH 미만인 물가·습지.
+// 수면과 거의 같은 높이라 물인지 잘 보이지 않는 땅에서 막히지 않게 한다
+export const WADE_DEPTH = 0.25;
+export const canWade = (x: number, z: number) => {
+  const y = terrainY(x, z);
+  return y < WATER_Y + 0.12 && (y > WATER_Y - WADE_DEPTH || PUDDLES.some(([px, pz, r]) => (x - px) ** 2 + (z - pz) ** 2 < r * r));
+};
 // 캐릭터가 딛는 높이. 웅덩이에서는 발목만 잠기게 물 바닥 대신 수면 바로 아래를 딛는다
 // 계단에서는 디딤판을, 계단 둘레에서는 낮춰 그린 땅을 딛는다
 export const walkY = (x: number, z: number) => {
   const t = treadY(x, z);
   if (t !== null) return t;
   const y = terrainY(x, z);
-  return y < WATER_Y - 0.1 && inPuddle(x, z) ? WATER_Y - 0.1 : y - stairDip(x, z);
+  return y < WATER_Y - 0.1 && canWade(x, z) ? WATER_Y - 0.1 : y - stairDip(x, z);
 };
 
 // 가장 가까운 물까지의 대략적인 거리(미터). 주변을 고리 모양으로 살핀다. 범위 안에 없으면 Infinity
