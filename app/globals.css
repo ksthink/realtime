@@ -60,7 +60,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
 .stat.action.stack, .stat.action.first { background: var(--accent); color: #4a2a24; }
 .stat.action.discard, .stat.action.blocked { background: #fff1d6; color: #8a5a12; }
 
-.toast { position: fixed; left: 50%; top: calc(20% + env(safe-area-inset-top, 0px)); transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px); background: var(--chip); backdrop-filter: blur(8px); border-radius: 14px; padding: 10px 18px; font-size: 18px; text-align: center; text-wrap: balance; opacity: 0; transition: opacity 1s ease; pointer-events: none; z-index: 6; }
+/* 알림 메시지: 아래쪽 가운데, 리액션 버튼 줄(아래 16px + 높이 44px) 바로 위 */
+.toast { position: fixed; left: 50%; bottom: calc(74px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px); background: var(--chip); backdrop-filter: blur(8px); border-radius: 14px; padding: 10px 18px; font-size: 18px; text-align: center; text-wrap: balance; opacity: 0; transition: opacity 1s ease; pointer-events: none; z-index: 6; }
 .toast.on { opacity: 1; transition: opacity 0.25s ease; }
 
 /* Ctrl + ? 로 여는 좌표·프레임 오버레이 */
@@ -91,6 +92,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
   .hud.reactions { left: calc(50% + 25px); bottom: calc(35px + env(safe-area-inset-bottom, 0px)); gap: 5px; }
   .chip.react { width: 32px; height: 32px; }
   .chip.react svg { width: 16px; height: 16px; }
+  /* 알림 메시지는 오른쪽 버튼 기둥(아래에서 200px까지)보다 위에 띄워 화면 폭을 다 쓴다 */
+  .toast { bottom: calc(212px + env(safe-area-inset-bottom, 0px)); font-size: 16px; padding: 9px 16px; }
   /* 아주 좁은 화면에서도 리액션 줄이 양옆 조작부에 닿지 않게 한다 */
   @media (max-width: 340px) {
     .hud.reactions { gap: 3px; }

@@ -41,7 +41,7 @@ const FOG_GROUND = [48, 150, 260], FOG_TOP = [110, 300, 320];
 // 나타나는 거리와 사라지는 거리를 달리 둬 경계에서 깜빡이지 않게 한다. 내 탑도 같은 규칙이다
 const LABEL_NEAR = 2, LABEL_NEAR_OUT = 2.5, LABEL_FAR = 12, LABEL_FAR_OUT = 13;
 const LABEL_POP = 0.14; // 푯말이 나타나거나 모습이 바뀔 때 살짝 커지며 또렷해지는 시간(초)
-const LABEL_HIDE = 0.12; // 멀어져 사라지는 시간(초)
+const LABEL_HIDE = 0.4; // 멀어져 사라지는 시간(초). 스르륵 옅어지며 살짝 작아진다
 const HOVER_PAD = 24; // 펼친 푯말은 테두리 밖 이만큼(캔버스 픽셀)까지 마우스가 안에 있는 것으로 본다
 const HOVER_GRACE = 0.12; // 마우스가 펼친 푯말을 벗어나고 이만큼(초) 지나야 접는다
 const OPEN_SWITCH = 0.3; // 가까운 탑 둘 사이에서 펼친 푯말을 바꾸려면 이만큼(m) 더 가까워야 한다
@@ -716,9 +716,17 @@ export class Game {
       // 모습이 바뀌면 곧바로 새 모습으로 바꾸고 살짝 커지며 또렷해진다. 사라질 때만 짧게 흐려진다
       let grow = 1;
       if (t.stage === 0) {
-        if (t.shown) { t.alpha -= dt / LABEL_HIDE; if (t.alpha <= 0) { t.alpha = 0; t.shown = 0; } }
+        if (t.shown) {
+          if (t.pop >= 0) { t.popFrom = t.alpha; t.pop = 0; } // 사라지기 시작한 때의 진하기에서 출발한다(pop이 음수면 사라지는 중)
+          t.pop = Math.max(-1, t.pop - dt / LABEL_HIDE);
+          const e = -t.pop, k = e * e * (3 - 2 * e); // 천천히 시작해 천천히 끝난다
+          t.alpha = t.popFrom * (1 - k);
+          grow = 1 - 0.04 * k;
+          if (t.pop <= -1) { t.alpha = 0; t.shown = 0; }
+        }
       } else {
         if (t.shown !== t.stage) { t.popFrom = t.shown ? Math.min(t.alpha, 0.6) : 0; t.shown = t.stage; t.pop = 0; }
+        else if (t.pop < 0) { t.popFrom = t.alpha; t.pop = 0; } // 사라지다 다시 가까워지면 지금 진하기에서 다시 또렷해진다
         t.pop = Math.min(1, t.pop + dt / LABEL_POP);
         const e = 1 - (1 - t.pop) ** 3; // 처음엔 빠르고 끝에서 부드럽게 멈춘다
         t.alpha = t.popFrom + (1 - t.popFrom) * e;
