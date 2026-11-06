@@ -58,9 +58,10 @@ export class TowerLabel {
   }
 
   // uv(스프라이트 위 좌표)가 말풍선 위인가
-  contains(uv: THREE.Vector2) {
+  // pad(캔버스 픽셀)만큼 넉넉히 본다. 이미 펼친 푯말은 넉넉히 봐서 가장자리에서 접혔다 펼쳤다 하지 않게 한다
+  contains(uv: THREE.Vector2, pad = 0) {
     const x = uv.x * W, y = (1 - uv.y) * H;
-    return x >= this.box.left && x <= this.box.right && y >= this.box.top && y <= BASE;
+    return x >= this.box.left - pad && x <= this.box.right + pad && y >= this.box.top - pad && y <= BASE + pad;
   }
 
   // 잘린 소원만 펼치고 접을 수 있다

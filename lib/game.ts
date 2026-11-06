@@ -42,6 +42,9 @@ const FOG_GROUND = [48, 150, 260], FOG_TOP = [110, 300, 320];
 const LABEL_NEAR = 2, LABEL_NEAR_OUT = 2.5, LABEL_FAR = 12, LABEL_FAR_OUT = 13;
 const LABEL_POP = 0.14; // 푯말이 나타나거나 모습이 바뀔 때 살짝 커지며 또렷해지는 시간(초)
 const LABEL_HIDE = 0.12; // 멀어져 사라지는 시간(초)
+const HOVER_PAD = 24; // 펼친 푯말은 테두리 밖 이만큼(캔버스 픽셀)까지 마우스가 안에 있는 것으로 본다
+const HOVER_GRACE = 0.12; // 마우스가 펼친 푯말을 벗어나고 이만큼(초) 지나야 접는다
+const OPEN_SWITCH = 0.3; // 가까운 탑 둘 사이에서 펼친 푯말을 바꾸려면 이만큼(m) 더 가까워야 한다
 // 시야각(도). 가로 화면은 세로 시야각 FOV_MIN을 쓰고, 화면이 좁아질수록(휴대폰 세로) 가로로 FOV_WIDE만큼 보이도록
 // 세로 시야각을 넓힌다. 너무 넓으면 가장자리가 늘어나 보여 FOV_MAX에서 멈춘다
 const FOV_MIN = 50, FOV_WIDE = 60, FOV_MAX = 76;
@@ -676,6 +679,7 @@ export class Game {
   private labelScale = 1;
   hover: { x: number; y: number } | null = null; // PC 마우스 위치(-1~1). 그 아래 「…」 푯말은 내용을 펼친다
   private hovered: TowerView | null = null;
+  private hoverLost = 0; // 마우스가 펼친 푯말을 벗어난 뒤 흐른 시간(초). 잠깐 벗어난 것은 무시한다
 
   // 마우스 아래에 보이는 푯말이 있는 탑. 펼쳐진 푯말은 더 크므로 마우스가 그 안에 있는 동안 유지된다
   private hoverTower(): TowerView | null {
@@ -686,19 +690,24 @@ export class Game {
     for (const t of this.towers.values()) {
       if (!t.shown) continue;
       const hit = this.ray.intersectObject(t.label.sprite)[0];
-      if (hit?.uv && hit.distance < bestD && t.label.contains(hit.uv)) { best = t; bestD = hit.distance; }
+      if (hit?.uv && hit.distance < bestD && t.label.contains(hit.uv, t === this.hovered ? HOVER_PAD : 0)) { best = t; bestD = hit.distance; }
     }
     return best;
   }
   private updateTowers(dt: number) {
     const now = Date.now();
     const p = this.me.g.position;
-    this.hovered = this.hoverTower();
+    // 펼친 푯말에서 마우스가 벗어나도 HOVER_GRACE 동안은 그대로 둔다
+    const h = this.hoverTower();
+    if (h || !this.hovered || !this.hover) { this.hovered = h; this.hoverLost = 0; }
+    else if ((this.hoverLost += dt) > HOVER_GRACE) { this.hovered = null; this.hoverLost = 0; }
     // 내용을 펼치는 탑은 가까운 탑 하나와 마우스를 올린 탑뿐이다. 이미 펼친 탑은 조금 더 멀어질 때까지 유지한다
     let open: TowerView | null = null, openD = Infinity;
     for (const t of this.towers.values()) {
       const d = Math.hypot(t.row.x - p.x, t.row.z - p.z);
-      if (d < (t.stage === 2 ? LABEL_NEAR_OUT : LABEL_NEAR) && d < openD) { open = t; openD = d; }
+      // 이미 펼친 탑은 다른 탑이 OPEN_SWITCH만큼 더 가까워야 바꾼다. 두 탑 사이에서 번갈아 펼쳐지지 않게 한다
+      const dd = t.stage === 2 && t !== this.hovered ? d - OPEN_SWITCH : d;
+      if (d < (t.stage === 2 ? LABEL_NEAR_OUT : LABEL_NEAR) && dd < openD) { open = t; openD = dd; }
     }
     for (const t of this.towers.values()) {
       const mine = t.row.owner_id === this.net.uid;
@@ -713,7 +722,7 @@ export class Game {
         t.pop = Math.min(1, t.pop + dt / LABEL_POP);
         const e = 1 - (1 - t.pop) ** 3; // 처음엔 빠르고 끝에서 부드럽게 멈춘다
         t.alpha = t.popFrom + (1 - t.popFrom) * e;
-        grow = 0.9 + 0.1 * e;
+        grow = 0.95 + 0.05 * e;
       }
       t.label.setOpacity(t.alpha);
       t.label.setSize(t.labelK * this.labelScale * grow);
