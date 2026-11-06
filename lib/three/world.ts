@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { HILL, STAIR, TREADS, WATER_Y, WORLD, baseTerrainY, clamp, hillBlocked, rimY, rng, stairDip, terrainY, vnoise } from "../terrain";
+import { HILL, STAIR, TREADS, WATER_Y, WORLD, baseTerrainY, clamp, rimY, rng, stairDip, terrainY, vnoise } from "../terrain";
 import { buildBigTree } from "./bigtree";
 import { WIND_DIR } from "./petals";
 import { stoneGeometry } from "./stone";
@@ -289,9 +289,8 @@ function hillStairs(root: THREE.Object3D) {
       const [x, z] = at(d, 0);
       steps.push({ x, y: hi, z, h: hi - lo + 0.2, yaw: Math.atan2(ux, uz) });
     });
-    // 난간은 비탈이 막히는 곳까지
-    let end = edge;
-    while (end < HILL.r && hillBlocked(...at(end, RAIL + 0.15))) end += 0.05;
+    // 난간은 발치 쪽 railEnd까지. 그 너머는 걸어 들어오는 입구가 벌어진다
+    const end = STAIR.railEnd;
     const n = Math.ceil((end - edge) / GAP);
     for (const side of [-1, 1]) {
       let prev: THREE.Vector3 | null = null;

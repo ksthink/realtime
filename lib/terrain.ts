@@ -43,7 +43,8 @@ const BRIDGES = [
 // 반경 r 밖에서는 땅이 그대로이고, 비탈은 계단으로만 오르내린다
 export const HILL = { x: 28, z: -12, r: 18, plateauR: 6.5, topY: 7.5, stairs: [2.74, -0.4], stairHalf: 0.6 };
 // 계단: 디딤판 깊이·반폭, 가운데 줄에서 난간까지, 디딤판 밑 땅을 그릴 때 낮추는 깊이. 디딤판은 꼭대기 가장자리 0.3m 안쪽에서 시작한다
-export const STAIR = { tread: 0.22, half: 1.3, rail: 1.4, dip: 0.14, d0: HILL.plateauR - 0.3 };
+// railEnd: 발치 쪽 마지막 난간 기둥 자리
+export const STAIR = { tread: 0.22, half: 1.3, rail: 1.4, dip: 0.14, d0: HILL.plateauR - 0.3, railEnd: 14.6 };
 const STAIR_END = Math.floor((HILL.r - 0.7 - STAIR.d0) / STAIR.tread) * STAIR.tread + STAIR.d0; // 마지막 디딤판 앞 끝
 // 계단 길 높이(0~1): 고른 경사로 오르고 양 끝 1.2m쯤은 둥글게 꺾어 땅 격자에서 모서리가 뭉개지지 않게 한다
 const EASE = 0.11;
@@ -89,7 +90,7 @@ export function baseTerrainY(x: number, z: number, banks = true) {
   for (const dv of dvs) h += -3.4 * Math.exp(-(dv * dv) / (5.2 * 5.2)); // 계곡
   const flat = clamp((r - 3) / 6, 0, 1);
   h *= flat * flat * (3 - 2 * flat); // 시작 지점은 평평하게
-  h += rimY(x, z); // 가장자리 산
+  if (r > WORLD - 6) h += Math.max(0, -h) * ease01((r - (WORLD - 6)) / 13) + rimY(x, z); // 가장자리 산. 낮은 골짜기도 메워 능선이 끊기지 않게 한다
   if (banks) {
     for (const [x0, x1, z0, z1] of FILLS) {
       const w = ease01((FILL_EDGE - Math.max(x0 - x, x - x1, 0)) / FILL_EDGE) * ease01((FILL_EDGE - Math.max(z0 - z, z - z1, 0)) / FILL_EDGE);
@@ -112,11 +113,18 @@ export function terrainY(x: number, z: number) {
 }
 // 동산 비탈과 꼭대기 나무 밑동이면 true. 꼭대기 울타리 안, 계단 위, 높이가 거의 없는 산자락은 걸을 수 있다.
 // 몸통(중심에서 0.73m)이 나무·울타리·난간을 뚫지 않게 그만큼 안쪽에서 막는다
+// 계단 발치는 난간이 끝나는 곳부터 깔때기처럼 벌어져 비스듬히 와도 들어가진다. 양 끝 기둥 둘레는 몸이 닿지 않게 둥글게 막는다
+const RAIL_TOP = Math.sqrt(HILL.plateauR ** 2 - STAIR.rail ** 2); // 꼭대기 쪽 첫 난간 기둥 자리(울타리 끝과 같다)
 export function hillBlocked(x: number, z: number) {
   const dx = x - HILL.x, dz = z - HILL.z, d = Math.hypot(dx, dz);
   if (d < 1.45) return true;
-  if (d < HILL.plateauR - 0.75 || hillW(x, z) < 0.06) return false;
-  return !HILL.stairs.some((a) => dx * Math.cos(a) + dz * Math.sin(a) > 0 && Math.abs(dz * Math.cos(a) - dx * Math.sin(a)) < HILL.stairHalf);
+  let open = false;
+  for (const a of HILL.stairs) {
+    const along = dx * Math.cos(a) + dz * Math.sin(a), lat = Math.abs(dz * Math.cos(a) - dx * Math.sin(a));
+    if (Math.hypot(along - STAIR.railEnd, lat - STAIR.rail) < 0.8 || Math.hypot(along - RAIL_TOP, lat - STAIR.rail) < 0.8) return true;
+    if (along > 0 && lat < HILL.stairHalf + 1.5 * Math.max(0, along - STAIR.railEnd - 0.8)) open = true;
+  }
+  return !open && d >= HILL.plateauR - 0.75 && hillW(x, z) >= 0.06;
 }
 export const isWater = (x: number, z: number) => terrainY(x, z) < WATER_Y + 0.12;
 

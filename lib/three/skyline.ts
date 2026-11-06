@@ -35,22 +35,24 @@ function ring(seed: number, n: number) {
 
 const ridged = (v: number) => { const t = 1 - Math.abs(v * 2 - 1); return t * t; };
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+// 산 가운데 1, 반폭의 1.3배 밖에서 0
+const near01 = (a: number, m: { a: number; w: number }) => { const u = clamp(1 - Math.abs(wrap(a - m.a)) / (m.w * 1.3), 0, 1); return u * u * (3 - 2 * u); };
 
 function halla(a: number) {
   const u = wrap(a - HALLA.a) / HALLA.w;
   if (Math.abs(u) >= 1) return 0;
-  // 완만한 긴 자락 + 꼭대기의 둥근 봉우리 - 분화구(백록담) 오목함
-  const top = Math.max(0, 1 - Math.abs(u) / 0.16), crater = Math.max(0, 1 - Math.abs(u) / 0.07);
-  return HALLA.h * (0.9 * (1 - u * u) ** 1.7 + 0.1 * top * top - 0.035 * crater);
+  // 완만한 긴 자락 + 꼭대기의 평평한 정수리 - 분화구(백록담) 오목함
+  const top = clamp((0.18 - Math.abs(u)) / 0.1, 0, 1), crater = clamp((0.06 - Math.abs(u)) / 0.03, 0, 1);
+  return HALLA.h * (0.88 * (1 - u * u) ** 1.7 + 0.12 * top * top * (3 - 2 * top) - 0.025 * crater);
 }
 
-const baekduJag = ring(71, 300);
+const baekduJag = [ring(71, 200), ring(72, 45)];
 function baekdu(a: number) {
   const u = wrap(a - BAEKDU.a) / BAEKDU.w;
   if (Math.abs(u) >= 1) return 0;
   const body = (1 - u ** 4) ** 2.2; // 어깨가 넓고 위가 평평한 덩어리
   const rim = clamp(1.4 - Math.abs(u) * 2.4, 0, 1); // 꼭대기 테두리 구간
-  const jag = (ridged(baekduJag(a / (Math.PI * 2))) - 0.35) * 0.13 * rim; // 들쭉날쭉한 봉우리들
+  const t = a / (Math.PI * 2), jag = (ridged(baekduJag[0](t)) - 0.3) * (0.04 + 0.1 * baekduJag[1](t)) * rim; // 크기가 고르지 않은 뾰족한 봉우리들
   const crater = 0.06 * Math.max(0, 1 - Math.abs(u + 0.06) / 0.1); // 천지 자리 오목함
   return BAEKDU.h * (0.86 * body + jag - crater);
 }
@@ -60,7 +62,9 @@ function layerHeights(l: Layer, idx: number) {
   const h = new Float32Array(COLS + 1);
   for (let i = 0; i <= COLS; i++) {
     const u = i / COLS, a = u * Math.PI * 2;
-    const e = 0.45 + 0.75 * env(u); // 큰 굴곡: 산맥이 높아졌다 낮아졌다 한다
+    // 큰 굴곡: 산맥이 높아졌다 낮아졌다 한다. 이름난 산 둘레는 낮춰 그 산이 홀로 서 보이게 한다
+    const near = Math.max(near01(a, HALLA), near01(a, BAEKDU));
+    const e = (0.45 + 0.75 * env(u)) * (1 - 0.55 * near);
     let y = l.lo + l.amp * e * (ridged(n[0](u)) * 0.55 + ridged(n[1](u)) * 0.27 + ridged(n[2](u)) * 0.12 + n[3](u) * 0.06);
     if (idx === HALLA.layer) y = Math.max(y, halla(a));
     if (idx === BAEKDU.layer) y = Math.max(y, baekdu(a));
@@ -74,26 +78,23 @@ export function makeSkyline() {
   const per = (COLS + 1) * ROWS.length;
   const pos = new Float32Array(per * LAYERS.length * 3), col = new Float32Array(per * LAYERS.length * 3);
   const index: number[] = [];
-  const jit = rng(5);
   LAYERS.forEach((l, li) => {
     const h = layerHeights(l, li), base = new THREE.Color(l.color), o = li * per;
     for (let i = 0; i <= COLS; i++) {
       const a = (i / COLS) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
-      // 비탈 방향: 둘레를 따라 높아지는 쪽의 반대가 바깥 면이다. 해 쪽을 향한 비탈을 조금 밝힌다
+      // 해 쪽을 향한 비탈과 해를 등진 면(해가 카메라 뒤에 있을 때)을 조금 밝힌다
       const slope = (h[(i + 1) % COLS] - h[(i + COLS - 1) % COLS]) / ((2 * Math.PI * 2) / COLS);
       const tx = -sa, tz = ca; // 둘레 접선
       const lit = clamp(0.5 - slope * 2.2 * (tx * SUN.x + tz * SUN.y) + 0.15 * (-ca * SUN.x - sa * SUN.y), 0, 1);
       for (let k = 0; k < ROWS.length; k++) {
         const top = k === ROWS.length - 1;
-        // 안쪽 줄은 높이를 조금 흔들어 면이 고르지 않게 한다
-        const f = ROWS[k] + (k > 0 && !top ? (jit() - 0.5) * 0.06 : 0);
-        const y = lerp(BASE, h[i], f);
+        const y = lerp(BASE, h[i], ROWS[k]);
         const v = o + i * ROWS.length + k;
         pos.set([ca * R, y * R, sa * R], v * 3);
         // 눈높이 아래는 하늘색으로 녹이고, 위로 갈수록 산 색이 드러난다
         const fade = clamp((y + 0.005) / (h[i] * 0.75 + 0.01), 0, 1);
         c.copy(base).multiplyScalar(0.92 + 0.16 * lit);
-        if (top && h[i] > 0.21) c.lerp(snow, clamp((h[i] - 0.21) / 0.03, 0, 1) * 0.55); // 가장 높은 봉우리만 희끗하게
+        if (top && h[i] > 0.19) c.lerp(snow, clamp((h[i] - 0.19) / 0.03, 0, 1) * 0.45); // 가장 높은 봉우리만 희끗하게
         c.lerp(haze, 1 - (1 - l.mix) * fade * fade);
         col.set([c.r, c.g, c.b], v * 3);
       }
