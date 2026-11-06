@@ -28,7 +28,7 @@ type StoneView = {
   from: THREE.Vector3 | null; to: THREE.Vector3; t: number; dur: number; arc: number;
   grow: number; dying: boolean; landSound?: boolean;
 };
-type TowerView = { row: TowerRow; label: TowerLabel; top: number; stage: 0 | 1 | 2; shown: 0 | 1 | 2; alpha: number }; // stage: 0 안 보임, 1 「…」, 2 내용
+type TowerView = { row: TowerRow; label: TowerLabel; top: number; stage: 0 | 1 | 2; shown: 0 | 1 | 2; alpha: number; labelK: number }; // stage: 0 안 보임, 1 「…」, 2 내용
 type Remote = { blob: Blob; target: THREE.Vector3; targetYaw: number; moving: boolean; seen: boolean; prayUntil: number; lastX: number; lastZ: number; splashD: number };
 type Floater = { sprite: THREE.Sprite; t: number };
 
@@ -227,15 +227,14 @@ export class Game {
     if (!t) {
       const label = new TowerLabel(this.font);
       this.root.add(label.sprite);
-      t = { row, label, top: groundAt(row.x, row.z), stage: 0, shown: 0, alpha: 0 };
+      t = { row, label, top: groundAt(row.x, row.z), stage: 0, shown: 0, alpha: 0, labelK: 1 };
       label.setOpacity(0);
       this.towers.set(row.id, t);
       this.restack(row.id);
     }
     t.row = row;
     // 휴대폰에서는 남의 탑 푯말이 화면을 많이 가려서 절반 크기로 줄인다. 소원을 빌면 내 탑도 남의 탑이 된다
-    const k = row.owner_id !== this.net.uid && matchMedia(TOUCH_QUERY).matches ? 0.5 : 1;
-    t.label.setSize(k);
+    t.labelK = row.owner_id !== this.net.uid && matchMedia(TOUCH_QUERY).matches ? 0.5 : 1;
   }
 
   private removeTower(id: string) {
@@ -673,6 +672,7 @@ export class Game {
   }
 
   private labelT = 0;
+  private labelScale = 1;
   private updateTowers(dt: number) {
     const now = Date.now();
     const p = this.me.g.position;
@@ -692,6 +692,7 @@ export class Game {
         if (t.alpha <= 0) { t.alpha = 0; t.shown = t.stage; }
       } else if (t.shown) t.alpha = Math.min(1, t.alpha + dt / LABEL_FADE);
       t.label.setOpacity(t.alpha);
+      t.label.setSize(t.labelK * this.labelScale);
       t.label.sprite.position.set(t.row.x, t.top + 0.3, t.row.z);
       if (!t.shown) continue;
       if (t.shown === 1) { t.label.setBrief(mine); continue; }
@@ -748,7 +749,9 @@ export class Game {
     const p = this.me.g.position.clone();
     if (isReaction(this.me.state)) p.y = this.me.baseY; // 앉거나 뛰어도 카메라는 지면 높이를 본다
     // 가로 화면은 그대로, 세로로 좁아질수록 조금씩 더 뒤로 뺀다(정사각형 1, 휴대폰 세로 약 PORTRAIT_PULL)
-    const dist = this.orbitDist * lerp(1, PORTRAIT_PULL, clamp((1 - this.camera.aspect) / 0.55, 0, 1));
+    const pull = lerp(1, PORTRAIT_PULL, clamp((1 - this.camera.aspect) / 0.55, 0, 1)), dist = this.orbitDist * pull;
+    // 시야각을 넓히고 카메라를 뒤로 뺀 만큼 푯말을 키워, 화면에서는 예전(시야각 42°, 그 거리)과 같은 크기로 보이게 한다
+    this.labelScale = (pull * Math.tan((this.camera.fov * Math.PI) / 360)) / Math.tan((42 * Math.PI) / 360);
     const want = this.camMode === 0
       ? new THREE.Vector3(
           Math.sin(this.orbitYaw) * dist * Math.cos(this.orbitPitch),
