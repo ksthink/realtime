@@ -13,7 +13,7 @@ const LEAVE = ACTIVE + 8; // 이보다 멀어지면 사라진다. 경계에서 �
 const FLY_SPEED = 1.1, FISH_SPEED = 0.6;
 
 export type CritterEnv = {
-  flowers: { x: number; y: number; z: number }[]; // 꽃 밑동 자리
+  flowers: { x: number; z: number; top: number }[]; // 꽃송이 자리와 윗면 높이
   splash: (x: number, z: number, yaw: number) => void;
   light: boolean; // 휴대폰이면 수를 줄인다
 };
@@ -90,7 +90,7 @@ function wingGeometry() {
 
 type Butterfly = Dweller & {
   p: THREE.Vector3; yaw: number; bank: number; rest: boolean; t: number; flap: number;
-  target: { x: number; y: number; z: number } | null; seed: number;
+  target: { x: number; z: number; top: number } | null; seed: number;
   flee: number; // 남은 달아나기 시간(초). 0보다 크면 캐릭터 반대쪽으로 높이 날아간다
 };
 const FLEE_NEAR = 2.5; // 캐릭터가 이만큼 다가오면 달아난다(m)
@@ -129,7 +129,7 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
         for (const i of grid.get(`${cx},${cz}`) ?? []) if (Math.hypot(env.flowers[i].x - x, env.flowers[i].z - z) < r) out.push(i);
     return out.length ? env.flowers[out[Math.floor(Math.random() * out.length)]] : null;
   };
-  const top = (f: { y: number }) => f.y + 0.38; // 꽃봉오리 위
+  const top = (f: { top: number }) => f.top + 0.02; // 꽃송이 위
   // (x, z) 둘레 r 안의 꽃 중 캐릭터에서 FLEE_NEAR보다 넉넉히 떨어진 것. 다가갔다 놀라 달아나기를 되풀이하지 않게
   const flowerAway = (x: number, z: number, r: number, player: THREE.Vector3) => {
     for (let k = 0; k < 5; k++) {
@@ -142,7 +142,7 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
   const list: Butterfly[] = Array.from({ length: n }, (_, i) => ({ on: false, home: null, p: new THREE.Vector3(), yaw: 0, bank: 0, rest: false, t: 0, flap: 0, target: null, seed: i * 1.37, flee: 0 }));
   const homes = flowerFields(env);
   const spawn = (b: Butterfly, i: number, home: Home) => {
-    const f = flowerNear(home.x, home.z, home.r) ?? { x: home.x, y: terrainY(home.x, home.z), z: home.z };
+    const f = flowerNear(home.x, home.z, home.r) ?? { x: home.x, z: home.z, top: terrainY(home.x, home.z) + 0.35 };
     b.rest = false; b.target = f; b.t = 0; b.flee = 0;
     b.p.set(f.x + rand(-3, 3), top(f) + rand(0.6, 1.4), f.z + rand(-3, 3));
     b.yaw = Math.random() * Math.PI * 2;

@@ -41,7 +41,7 @@ function sway<M extends THREE.Material>(mat: M, time: { value: number }, key: st
   return mat;
 }
 
-type Item = { x: number; y: number; z: number; r: () => number; hide?: boolean; c?: number };
+type Item = { x: number; y: number; z: number; r: () => number; hide?: boolean };
 
 // 넓히기 전 반경. 그 안의 식생은 예전 자리와 모양 그대로 둔다
 const OLD_WORLD = 80;
@@ -55,59 +55,66 @@ const oldGround = (x: number, z: number) => {
 };
 
 // ── 나무·꽃 모양. 모든 인스턴스가 함께 쓰므로 정점을 늘려도 한 벌뿐이다 ──
-// 정점 색(명암)은 인스턴스 색에 곱해진다
-const shade = (g: THREE.BufferGeometry, fn: (x: number, y: number, z: number) => number) => {
-  const p = g.attributes.position, col = new Float32Array(p.count * 3);
-  for (let i = 0; i < p.count; i++) col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = fn(p.getX(i), p.getY(i), p.getZ(i));
-  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  return g;
-};
-// 잎덩이: 부드럽게 울퉁불퉁한 공(뭉친 잎). 위는 밝고 아래는 어둡게
+// 다른 것들(캐릭터·땅·바위)처럼 명암을 따로 넣지 않고 빛만 받게 둔다
+// 잎덩이: 살짝 울퉁불퉁한 공(뭉친 잎). 윤곽만 조금 부드럽게 흔들리는 정도
 function canopyGeometry() {
   const g = mergeVertices(new THREE.SphereGeometry(1, 18, 12).deleteAttribute("normal").deleteAttribute("uv")); // 이음매·극점 정점을 합쳐 매끈하게
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const k = 1 + 0.08 * Math.sin(3.1 * x + 1.3) * Math.sin(2.7 * y + 0.4) * Math.sin(3.3 * z + 2.1) + 0.035 * Math.sin(5.3 * x - 4.7 * z + 2.2 * y);
+    const k = 1 + 0.045 * Math.sin(3.1 * x + 1.3) * Math.sin(2.7 * y + 0.4) * Math.sin(3.3 * z + 2.1) + 0.02 * Math.sin(5.3 * x - 4.7 * z + 2.2 * y);
     p.setXYZ(i, x * k, y * k, z * k);
   }
   g.computeVertexNormals();
-  return shade(g, (_x, y) => 0.76 + 0.32 * (y + 1) / 2);
+  return g;
 }
-// 줄기: 밑동이 퍼지고 위로 가늘어진다. 잎덩이로 들어가는 짧은 가지 둘. 아래는 어둡게. 높이 1(가운데가 원점)
+// 줄기: 밑동이 살짝 퍼지고 위로 가늘어진다. 높이 1(가운데가 원점)
 function trunkGeometry() {
-  const body = new THREE.LatheGeometry([0.25, 0.17, 0.13, 0.1, 0.075].map((r, i) => new THREE.Vector2(r, [0, 0.06, 0.25, 0.6, 1][i])), 7);
-  const branch = (y: number, a: number) => new THREE.CylinderGeometry(0.02, 0.035, 0.32, 5).translate(0, 0.16, 0).rotateZ(0.85).rotateY(a).translate(0, y, 0);
-  const g = mergeGeometries([body, branch(0.72, 0.4), branch(0.86, 3.3)].map((x) => x.deleteAttribute("uv")))!;
-  g.translate(0, -0.5, 0);
-  return shade(g, (_x, y) => 0.72 + 0.3 * Math.min(1, y + 0.5));
+  const g = new THREE.LatheGeometry([0.22, 0.16, 0.13, 0.1, 0.08].map((r, i) => new THREE.Vector2(r, [0, 0.06, 0.25, 0.6, 1][i])), 7);
+  return g.deleteAttribute("uv").translate(0, -0.5, 0);
 }
-// 꽃 줄기 + 작은 잎 한 장
+// 꽃 줄기 + 작은 잎 한 장. 높이 0.3(가운데가 원점)
 function stemGeometry() {
   const leaf = new THREE.SphereGeometry(1, 6, 4).scale(0.045, 0.012, 0.022).translate(0.04, 0, 0).rotateZ(0.5).translate(0, -0.03, 0);
   return mergeGeometries([new THREE.CylinderGeometry(0.018, 0.022, 0.3, 5), leaf].map((x) => x.deleteAttribute("uv")))!;
 }
-// 꽃송이: 둥근 꽃잎 다섯 장과 노란 꽃술. aCenter(1이면 꽃술)로 꽃술만 노랗게 칠한다
-function flowerHeadGeometry() {
+// 꽃송이: 둥근 꽃잎 n장과 노란 꽃술. aCenter(1이면 꽃술)로 꽃술만 노랗게 칠한다
+function flowerHeadGeometry(n: number) {
   const parts: THREE.BufferGeometry[] = [];
-  for (let k = 0; k < 5; k++) parts.push(new THREE.SphereGeometry(1, 5, 3).scale(0.05, 0.016, 0.032).translate(0.045, 0, 0).rotateY((k / 5) * Math.PI * 2));
+  const w = 0.032 * (5 / n) ** 0.6; // 꽃잎이 많을수록 조금 좁게
+  for (let k = 0; k < n; k++) parts.push(new THREE.SphereGeometry(1, 5, 3).scale(0.05, 0.016, w).translate(0.045, 0, 0).rotateY((k / n) * Math.PI * 2));
   parts.push(new THREE.SphereGeometry(0.028, 6, 4).scale(1, 0.6, 1).translate(0, 0.008, 0));
-  const g = mergeGeometries(parts.map((x) => x.deleteAttribute("uv")))!; // 정점을 나눠 쓰는(인덱스) 채로 합쳐 꽃 하나에 정점 150개쯤
-  const center = new Float32Array(g.attributes.position.count), petals = g.attributes.position.count - parts[5].attributes.position.count;
-  center.fill(1, petals);
+  const g = mergeGeometries(parts.map((x) => x.deleteAttribute("uv")))!; // 정점을 나눠 쓰는(인덱스) 채로 합친다
+  const center = new Float32Array(g.attributes.position.count);
+  center.fill(1, g.attributes.position.count - parts[n].attributes.position.count);
   g.setAttribute("aCenter", new THREE.BufferAttribute(center, 1));
   return g;
 }
-// 꽃 무리: 가운데 꽃마다 같은 색 꽃을 per-1송이 더 둘레에 피운다
+// 꽃 한 송이의 모양: 줄기 길이·기운 방향과 각도·꽃송이가 숙인 정도·꽃잎 수·색. 줄기와 꽃송이가 같은 값을 쓴다
+type Bloom = { len: number; yaw: number; lean: THREE.Quaternion; head: THREE.Quaternion; tip: THREE.Vector3; petals: number; size: number; hue: number; sat: number; light: number };
+const FLOWER_HUES = [0, 0.08, 0.14, 0.78, 0.9, 0.55];
+function bloom(r: () => number, color: number): Bloom {
+  const len = 0.7 + r() * 0.65, yaw = r() * Math.PI * 2, d = r() * Math.PI * 2, tilt = r() * 0.3, droop = 0.25 + r() * 0.45;
+  const axis = new THREE.Vector3(Math.cos(d), 0, -Math.sin(d)); // +y를 d 방향으로 눕히는 축
+  const lean = new THREE.Quaternion().setFromAxisAngle(axis, tilt);
+  return {
+    len, yaw, lean,
+    head: new THREE.Quaternion().setFromAxisAngle(axis, tilt + droop).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), r() * Math.PI * 2)),
+    tip: new THREE.Vector3(0, 0.3 * len, 0).applyQuaternion(lean),
+    petals: r() < 0.55 ? 5 : 6, size: 0.8 + r() * 0.45,
+    hue: FLOWER_HUES[color] + (r() - 0.5) * 0.05, sat: 0.5 + r() * 0.2, light: 0.67 + r() * 0.1,
+  };
+}
+// 꽃 무리: 가운데 꽃마다 같은 색 계열 꽃을 per-1송이 더 둘레에 피운다
 function clusterFlowers(centers: Item[], per: number, seed: number, ok: (x: number, y: number, z: number, slope: number) => boolean, ground = terrainY) {
-  const r = rng(seed), out: Item[] = [];
+  const r = rng(seed), out: (Item & { b: Bloom })[] = [];
   for (const c of centers) {
     const color = Math.floor(r() * 6);
-    out.push({ ...c, c: color });
+    out.push({ ...c, b: bloom(r, color) });
     for (let k = 1; k < per; k++) {
       const a = r() * Math.PI * 2, d = 0.25 + r() * 0.5, x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d, y = ground(x, z);
       const slope = Math.hypot(ground(x + 0.4, z) - ground(x - 0.4, z), ground(x, z + 0.4) - ground(x, z - 0.4));
-      if (ok(x, y, z, slope)) out.push({ x, y: ground === terrainY ? y : terrainY(x, z), z, r: c.r, c: color });
+      if (ok(x, y, z, slope)) out.push({ x, y: ground === terrainY ? y : terrainY(x, z), z, r: c.r, b: bloom(r, color) });
     }
   }
   return out;
@@ -126,7 +133,7 @@ function scatter(count: number, seed: number, rMin: number, rMax: number, ok: (x
   return out;
 }
 // 예전 식생 + 바깥 고리. 예전 것은 산이 있던 자리와 동산 꼭대기·계단 위만 숨긴다(난수 순서는 그대로)
-function widen(old: Item[], ring: Item[], tall = Infinity) {
+function widen<T extends Item>(old: T[], ring: T[], tall = Infinity) {
   for (const it of old) {
     const dx = it.x - HILL.x, dz = it.z - HILL.z, d = Math.hypot(dx, dz);
     it.hide = Math.hypot(it.x, it.z) > OLD_WORLD - 6 || d < HILL.plateauR + 0.6 || it.y - baseTerrainY(it.x, it.z) > tall
@@ -271,7 +278,7 @@ export function buildWorld(root: THREE.Object3D) {
   // 바깥 고리는 예전과 같은 밀도가 되게 수를 정했다
   const treeOk = (x: number, y: number, z: number, s: number) => onLand(x, y, z, s) && y < 5;
   const trees = widen(scatter(620, 11, 8, OLD_WORLD + 3, treeOk, oldGround), scatter(860, 111, OLD_WORLD - 6, WORLD + 3, treeOk), 3);
-  tiled(instanced(root, trunkGeometry(), new THREE.MeshStandardMaterial({ roughness: 1, vertexColors: true }), trees, (t, o, col) => {
+  tiled(instanced(root, trunkGeometry(), new THREE.MeshStandardMaterial({ roughness: 1 }), trees, (t, o, col) => {
     const h = 0.9 + t.r() * 0.8;
     o.position.y += h / 2;
     o.scale.set(1, h, 1);
@@ -283,7 +290,7 @@ export function buildWorld(root: THREE.Object3D) {
     for (let i = 0; i < k; i++) canopy.push({ x: t.x + (t.r() - 0.5) * 0.5, y: t.y + h + 0.3 + i * 0.45 * (t.r() + 0.5), z: t.z + (t.r() - 0.5) * 0.5, s: 0.55 + t.r() * 0.5, hue, l, hide: t.hide });
   }
   // 수관과 덤불은 그림자도 같이 흔든다. 어긋나면 표면이 제 그림자 안으로 들어가 얼룩이 생길 수 있다
-  tiled(instanced(root, canopyGeometry(), sway(new THREE.MeshStandardMaterial({ roughness: 0.95, vertexColors: true }), windTime, "canopy", canopyWind), canopy, (t, o, col) => {
+  tiled(instanced(root, canopyGeometry(), sway(new THREE.MeshStandardMaterial({ roughness: 0.95 }), windTime, "canopy", canopyWind), canopy, (t, o, col) => {
     o.scale.set(t.s * 1.1, t.s * 0.9, t.s * 1.1);
     col.setHSL(t.hue, 0.45, t.l);
   }, TILE.canopy), sway(new THREE.MeshDepthMaterial(), windTime, "canopy", canopyWind));
@@ -300,15 +307,23 @@ export function buildWorld(root: THREE.Object3D) {
   );
   // 꽃 줄기는 밑동에서 휘고 봉오리는 줄기 끝을 따라간다. 그림자는 너무 작아 그대로 둔다
   const stemWind = `float bend = (position.y + 0.15) / 0.32; transformed.xz += wind * ${f(SWAY_FLOWER)} * bend * bend;`;
-  tiled(instanced(root, stemGeometry(), sway(new THREE.MeshStandardMaterial({ roughness: 1 }), windTime, "stem", stemWind, flowerFade), flowers, (_t, o, col) => {
-    o.position.y += 0.15;
+  const q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+  tiled(instanced(root, stemGeometry(), sway(new THREE.MeshStandardMaterial({ roughness: 1 }), windTime, "stem", stemWind, flowerFade), flowers, (t, o, col) => {
+    // 줄기는 꽃마다 길이와 기운 방향이 다르고, 잎이 붙은 쪽도 돌려 놓는다
+    o.position.add(new THREE.Vector3(0, 0.15 * t.b.len, 0).applyQuaternion(t.b.lean));
+    o.quaternion.copy(t.b.lean).multiply(q.setFromAxisAngle(up, t.b.yaw));
+    o.scale.set(1, t.b.len, 1);
     col.set("#88b57a");
   }, TILE.flower), undefined, true);
-  tiled(instanced(root, flowerHeadGeometry(), withCenter(sway(new THREE.MeshStandardMaterial({ roughness: 0.9 }), windTime, "bud", `transformed.xz += wind * ${f(SWAY_FLOWER)};`, flowerFade)), flowers, (t, o, col) => {
-    o.position.y += 0.31;
-    o.rotation.set((t.r() - 0.5) * 0.6, t.r() * Math.PI * 2, (t.r() - 0.5) * 0.6, "YXZ"); // 꽃마다 고개를 조금씩 다르게
-    col.setHSL([0, 0.08, 0.14, 0.78, 0.9, 0.55][t.c ?? 0], 0.6, 0.72);
-  }, TILE.flower), undefined, true);
+  // 꽃송이: 줄기 끝에서 기운 쪽으로 더 숙인다. 꽃잎 수(5·6)마다 메시가 따로다
+  for (const n of [5, 6]) {
+    tiled(instanced(root, flowerHeadGeometry(n), withCenter(sway(new THREE.MeshStandardMaterial({ roughness: 0.9 }), windTime, `bud${n}`, `transformed.xz += wind * ${f(SWAY_FLOWER)};`, flowerFade)), flowers.filter((t) => t.b.petals === n), (t, o, col) => {
+      o.position.add(t.b.tip);
+      o.quaternion.copy(t.b.head);
+      o.scale.setScalar(t.b.size);
+      col.setHSL(t.b.hue, t.b.sat, t.b.light);
+    }, TILE.flower), undefined, true);
+  }
   const rockOk = (_x: number, y: number) => y > WATER_Y + 0.2;
   // 주울 수 없는 큰 바위. 줍는 돌과 구별되도록 한참 크다
   tiled(instanced(root, stoneGeometry(3), new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), widen(scatter(90, 71, 7, OLD_WORLD + 4, rockOk, oldGround), scatter(140, 171, OLD_WORLD - 6, WORLD + 4, rockOk)), (t, o, col) => {
@@ -325,8 +340,8 @@ export function buildWorld(root: THREE.Object3D) {
   return {
     // 보이는 작은 나무 밑동 자리(NPC가 찾아간다)
     trees: trees.filter((t) => !t.hide).map((t) => ({ x: t.x, z: t.z })),
-    // 보이는 꽃 밑동 자리(나비가 앉는다)
-    flowers: flowers.filter((t) => !t.hide).map((t) => ({ x: t.x, y: t.y, z: t.z })),
+    // 보이는 꽃송이 자리와 그 윗면 높이(나비가 앉는다)
+    flowers: flowers.filter((t) => !t.hide).map((t) => ({ x: t.x + t.b.tip.x, z: t.z + t.b.tip.z, top: t.y + t.b.tip.y + 0.03 })),
     // cam·fog를 주면 칸을 거른다. 안개 끝(시선 깊이)보다 먼 칸은 안개색뿐이라 끄고, 꽃은 안개가 시작하는 거리 근처에서 줄여 없앤다
     update(dt: number, cam?: THREE.Camera, fog?: THREE.Fog) {
       windTime.value += dt;
