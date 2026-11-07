@@ -10,6 +10,7 @@ import { makePetals } from "./three/petals";
 import { makeSkyline } from "./three/skyline";
 import { makeSplash } from "./three/splash";
 import { makePickGlow, makeStoneMesh } from "./three/stone";
+import { makeNpcs } from "./three/npc";
 import { buildWorld, groundAt } from "./three/world";
 import { seeThrough } from "./three/bigtree";
 
@@ -96,6 +97,7 @@ export class Game {
   private splash = makeSplash();
   private skyline = makeSkyline();
   private world: ReturnType<typeof buildWorld>;
+  private npcs: ReturnType<typeof makeNpcs>;
   private glowOn: StoneView | null = null;
   private glowK = 0;
   private waterT = 0;
@@ -122,6 +124,7 @@ export class Game {
     this.sun.shadow.bias = -0.0008;
     this.root.add(this.sun, this.sun.target);
     this.world = buildWorld(this.root);
+    this.npcs = makeNpcs(this.root, { blocked, standY, trees: this.world.trees });
     this.root.add(this.petals.points, this.splash.group, this.skyline.mesh);
 
     this.me = this.makeAvatar(meRow);
@@ -551,6 +554,7 @@ export class Game {
     this.updatePoseSend(dt);
     const p = this.me.g.position;
     this.world.update(dt, this.camera, this.scene.fog as THREE.Fog);
+    this.npcs.update(dt);
     this.petals.update(dt, p);
     this.splash.update(dt);
     this.sun.position.copy(p).add(SUN_OFF);
