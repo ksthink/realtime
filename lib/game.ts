@@ -554,7 +554,7 @@ export class Game {
     this.updatePoseSend(dt);
     const p = this.me.g.position;
     this.world.update(dt, this.camera, this.scene.fog as THREE.Fog);
-    this.npcs.update(dt);
+    this.npcs.update(dt, this.camera);
     this.petals.update(dt, p);
     this.splash.update(dt);
     this.sun.position.copy(p).add(SUN_OFF);

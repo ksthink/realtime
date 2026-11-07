@@ -18,6 +18,7 @@ type Tree = { x: number; z: number };
 type Seg = { t0: number; t1: number; ax: number; az: number; bx: number; bz: number; tree: Tree | null };
 type Npc = {
   ch: Blob; tour: Seg[]; length: number; phase: number; legLen: number; x: number; z: number; lean: number; seg?: Seg;
+  mats: { near: THREE.Material; far: THREE.Material };
   // 새싹 흔들림: 앞뒤(x)·좌우(z) 기울기와 그 속도. 지난 프레임 위치·방향으로 움직임을 잰다
   sprout: THREE.Group; sx: number; sz: number; vx: number; vz: number; px: number; pz: number; pyaw: number; speed: number;
 };
@@ -107,15 +108,21 @@ export function npcBody() {
   return out;
 }
 
-// 슬라임 재질: 반투명에 매끈하고, 보는 각도에 따라 무지개빛(박막 간섭)이 돈다. 안쪽이 은은하게 빛나 빛이 비쳐 든 것처럼 보인다.
-// 진짜 투과(transmission)는 화면을 한 번 더 그려야 해서 휴대폰에서 무거우므로 쓰지 않는다
+// 슬라임 재질 두 벌. 둘 다 매끈하고, 보는 각도에 따라 무지개빛(박막 간섭)이 돌며 안쪽이 은은하게 빛난다.
+// near: 진짜 빛 투과(transmission). 몸 너머의 것(뒤·옆에서 본 눈코입과 팔, 배경)이 물방울을 지나며 굴절돼 보인다.
+//       화면을 한 번 더 그려야 해서 무거우므로 카메라 가까이(NEAR) 있는 NPC에만 쓴다
+// far: 그냥 반투명. 멀리서는 굴절이 보이지 않으니 가볍게
+const NEAR = 18;
 function slime(color: THREE.Color) {
-  return new THREE.MeshPhysicalMaterial({
-    vertexColors: true, transparent: true, opacity: 0.72, roughness: 0.12, metalness: 0,
-    clearcoat: 1, clearcoatRoughness: 0.08,
+  const common = {
+    vertexColors: true, roughness: 0.1, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08,
     iridescence: 1, iridescenceIOR: 1.35, iridescenceThicknessMinimum: 180, iridescenceThicknessMaximum: 620,
-    emissive: color, emissiveIntensity: 0.22,
-  });
+    emissive: color, emissiveIntensity: 0.18,
+  };
+  return {
+    near: new THREE.MeshPhysicalMaterial({ ...common, transmission: 0.85, ior: 1.33, thickness: 0.9, attenuationColor: color, attenuationDistance: 1.6 }),
+    far: new THREE.MeshPhysicalMaterial({ ...common, transparent: true, opacity: 0.72 }),
+  };
 }
 
 export function makeNpcs(root: THREE.Object3D, env: NpcEnv) {
@@ -127,7 +134,8 @@ export function makeNpcs(root: THREE.Object3D, env: NpcEnv) {
     ch.g.traverse((o) => { if ((o as THREE.Sprite).isSprite) o.visible = false; }); // 이름표는 달지 않는다
     for (const l of ch.legs) l.visible = false; // 발 없이 떠다닌다
     (ch.body.material as THREE.Material).dispose();
-    ch.body.material = slime(c);
+    const mats = slime(c);
+    ch.body.material = mats.far;
     ch.g.scale.setScalar(SCALE);
     ch.g.rotation.order = "YXZ"; // 앞으로 기우는 각(x)이 바라보는 쪽을 따라가게
     ch.g.visible = false; // 서버 시각을 받을 때까지 숨긴다
@@ -135,13 +143,13 @@ export function makeNpcs(root: THREE.Object3D, env: NpcEnv) {
     const sp = sprout(ch.body.geometry.boundingBox!.max.y);
     ch.body.add(sp);
     root.add(ch.g);
-    npcs.push({ ch, tour, length, phase: i * 1.7, legLen: ch.body.position.y * SCALE, x: 0, z: 0, lean: 0, sprout: sp, sx: 0, sz: 0, vx: 0, vz: 0, px: NaN, pz: 0, pyaw: 0, speed: 0 });
+    npcs.push({ ch, mats, tour, length, phase: i * 1.7, legLen: ch.body.position.y * SCALE, x: 0, z: 0, lean: 0, sprout: sp, sx: 0, sz: 0, vx: 0, vz: 0, px: NaN, pz: 0, pyaw: 0, speed: 0 });
   });
   let offset: number | null = null, fresh = true;
   clockOffset().then((o) => { offset = o; }, () => { offset = 0; }); // 못 받으면 이 기기 시계로
 
   return {
-    update(dt: number) {
+    update(dt: number, camera: THREE.Camera) {
       if (offset === null) return;
       const now = (Date.now() + offset) / 1000, k = fresh ? 1 : Math.min(1, dt * 8);
       if (fresh) for (const n of npcs) n.ch.g.visible = true;
@@ -181,6 +189,7 @@ export function makeNpcs(root: THREE.Object3D, env: NpcEnv) {
         ch.g.rotation.x = n.lean;
         ch.g.rotation.z = 0.04 * Math.sin(now * 1.3 + n.phase * 2); // 살랑살랑
         swaySprout(n, dt);
+        ch.body.material = ch.g.position.distanceToSquared(camera.position) < NEAR * NEAR ? n.mats.near : n.mats.far;
         // 떠갈 때 팔이 하늘하늘
         if (!s.tree) for (let a = 0; a < 2; a++) ch.arms[a].rotation.z += (a ? 1 : -1) * (0.25 + 0.12 * Math.sin(now * 3 + n.phase + a));
       }
