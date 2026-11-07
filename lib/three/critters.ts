@@ -14,6 +14,7 @@ const FLY_SPEED = 1.1, FISH_SPEED = 0.6;
 
 export type CritterEnv = {
   flowers: { x: number; z: number; top: number }[]; // 꽃송이 자리와 윗면 높이
+  meadows: { x: number; z: number; r: number }[]; // 꽃 군락지: 나비가 여럿 산다
   splash: (x: number, z: number, yaw: number) => void;
   light: boolean; // 휴대폰이면 수를 줄인다
   feeding: () => { x: number; z: number }[]; // 나무지기가 지금 먹이를 주는 물고기 터 가운데들
@@ -99,7 +100,9 @@ const FLEE_NEAR = 2.5; // 캐릭터가 이만큼 다가오면 달아난다(m)
 // 꽃밭: 꽃 자리 중에서 시드로 고르고 서로 14m 넘게 떨어뜨린다. 한 곳에 2~3마리(휴대폰은 1~2마리)
 const FIELDS = 32;
 function flowerFields(env: CritterEnv) {
-  const r = rng(7701), homes: Home[] = [];
+  const r = rng(7701);
+  // 꽃 군락지에는 나비가 5마리(휴대폰 3마리)씩
+  const homes: Home[] = env.meadows.map((m) => ({ x: m.x, z: m.z, r: m.r + 1, n: env.light ? 3 : 5, members: [] }));
   for (let k = 0; k < 4000 && homes.length < FIELDS && env.flowers.length; k++) {
     const f = env.flowers[Math.floor(r() * env.flowers.length)], n = 2 + Math.floor(r() * 2);
     if (homes.every((h) => Math.hypot(h.x - f.x, h.z - f.z) > 14)) homes.push({ x: f.x, z: f.z, r: 6, n: env.light ? Math.ceil(n / 2) : n, members: [] });

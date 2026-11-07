@@ -7,7 +7,7 @@ import { stoneGeometry } from "./stone";
 import { tickWater, waterMaterial } from "./water";
 
 // 바람 세기. 값은 최대 흔들림(m)이고, 0이면 그 부위가 멈춘다. RIPPLE은 수관 표면 일렁임(반지름 비율)
-const SWAY_CANOPY = 0.035, SWAY_BUSH = 0.03, SWAY_FLOWER = 0.02, RIPPLE = 0.012;
+const SWAY_CANOPY = 0.035, SWAY_BUSH = 0.03, SWAY_FLOWER = 0.05, RIPPLE = 0.012;
 
 const f = (v: number) => v.toFixed(4);
 
@@ -76,7 +76,7 @@ function trunkGeometry() {
 // 꽃 줄기 + 작은 잎 한 장. 높이 0.3(가운데가 원점)
 function stemGeometry() {
   const leaf = new THREE.SphereGeometry(1, 6, 4).scale(0.045, 0.012, 0.022).translate(0.04, 0, 0).rotateZ(0.5).translate(0, -0.03, 0);
-  return mergeGeometries([new THREE.CylinderGeometry(0.018, 0.022, 0.3, 5), leaf].map((x) => x.deleteAttribute("uv")))!;
+  return mergeGeometries([new THREE.CylinderGeometry(0.009, 0.012, 0.3, 5), leaf].map((x) => x.deleteAttribute("uv")))!;
 }
 // 꽃송이: 둥근 꽃잎 n장과 노란 꽃술. aCenter(1이면 꽃술)로 꽃술만 노랗게 칠한다
 function flowerHeadGeometry(n: number) {
@@ -105,6 +105,34 @@ function bloom(r: () => number, color: number): Bloom {
     hue: FLOWER_HUES[color] + (r() - 0.5) * 0.05, sat: 0.5 + r() * 0.2, light: 0.67 + r() * 0.1,
   };
 }
+// 꽃 군락지: 평평한 풀밭 몇 곳에 꽃이 130송이쯤(1m²에 3송이 남짓) 빽빽하게 핀다. 군락마다 세 가지 색으로 어울리게
+const MEADOWS = 6;
+function meadowFlowers(seed: number, onLand: (x: number, y: number, z: number, slope: number) => boolean) {
+  const r = rng(seed), centers: { x: number; z: number; r: number }[] = [], out: (Item & { b: Bloom })[] = [];
+  const slopeAt = (x: number, z: number) => Math.hypot(terrainY(x + 0.4, z) - terrainY(x - 0.4, z), terrainY(x, z + 0.4) - terrainY(x, z - 0.4));
+  for (let k = 0; k < 3000 && centers.length < MEADOWS; k++) {
+    const a = r() * Math.PI * 2, d = 15 + Math.sqrt(r()) * (WORLD - 30), x = Math.cos(a) * d, z = Math.sin(a) * d, R = 3 + r();
+    if (Math.hypot(x - HILL.x, z - HILL.z) < HILL.r + 6 || centers.some((c) => Math.hypot(c.x - x, c.z - z) < 40)) continue;
+    // 군락 전체가 마른 땅이고 너무 기울지 않아야 한다
+    let flat = true;
+    for (let i = 0; i < 9 && flat; i++) {
+      const px = x + Math.cos(i * 0.7) * R * (i / 8), pz = z + Math.sin(i * 0.7) * R * (i / 8), y = terrainY(px, pz);
+      flat = y > WATER_Y + 0.8 && y < 4 && slopeAt(px, pz) < 0.35;
+    }
+    if (!flat) continue;
+    centers.push({ x, z, r: R });
+    const theme = [Math.floor(r() * 6), Math.floor(r() * 6), Math.floor(r() * 6)];
+    for (let n = 0; n < 130; n++) {
+      const fa = r() * Math.PI * 2, fd = Math.sqrt(r()) * R, fx = x + Math.cos(fa) * fd, fz = z + Math.sin(fa) * fd, fy = terrainY(fx, fz);
+      if (!onLand(fx, fy, fz, slopeAt(fx, fz))) continue;
+      const b = bloom(r, theme[n % 3]);
+      b.size *= 1.15;
+      out.push({ x: fx, y: fy, z: fz, r, b });
+    }
+  }
+  return { centers, flowers: out };
+}
+
 // 꽃 무리: 가운데 꽃마다 같은 색 계열 꽃을 per-1송이 더 둘레에 피운다
 function clusterFlowers(centers: Item[], per: number, seed: number, ok: (x: number, y: number, z: number, slope: number) => boolean, ground = terrainY) {
   const r = rng(seed), out: (Item & { b: Bloom })[] = [];
@@ -301,12 +329,19 @@ export function buildWorld(root: THREE.Object3D) {
     col.setHSL(0.28 + t.r() * 0.08, 0.4, 0.5 + t.r() * 0.12);
   }, TILE.bush), sway(new THREE.MeshDepthMaterial(), windTime, "bush", bushWind));
   // 같은 색 꽃이 4송이쯤 모여 핀다(무리 수 × 4 ≈ 예전 꽃 수)
+  const meadows = meadowFlowers(4242, onLand);
   const flowers = widen(
     clusterFlowers(scatter(450, 37, 3.5, OLD_WORLD - 1, onLand, oldGround), 4, 38, onLand, oldGround),
     clusterFlowers(scatter(700, 137, OLD_WORLD - 6, WORLD - 1, onLand), 4, 138, onLand),
-  );
-  // 꽃 줄기는 밑동에서 휘고 봉오리는 줄기 끝을 따라간다. 그림자는 너무 작아 그대로 둔다
-  const stemWind = `float bend = (position.y + 0.15) / 0.32; transformed.xz += wind * ${f(SWAY_FLOWER)} * bend * bend;`;
+  ).concat(meadows.flowers);
+  // 꽃은 바람에 살랑인다: 줄기는 밑동에서 휘고 꽃송이는 줄기 끝을 따라간다. 송이마다 조금씩 다른 박자로 흔들린다.
+  // 줄기와 꽃송이는 서로 다르게 돌려 놓은 인스턴스라, 흔들림을 세계 방향으로 구해 각자의 공간으로 되돌려 더한다(그래야 꽃송이가 줄기 끝에 붙어 있다)
+  // 그림자는 너무 작아 흔들지 않는다
+  const flowerWind = (k: string) => `
+    vec2 fp = instanceMatrix[3].xz;
+    float flutter = 0.7 + 0.5 * sin(uWindTime * 2.6 + fp.x * 0.9 + fp.y * 1.3);
+    transformed += inverse(mat3(instanceMatrix)) * vec3(wind.x, 0.0, wind.y) * ${f(SWAY_FLOWER)} * flutter * (${k});`;
+  const stemWind = flowerWind("pow((position.y + 0.15) / 0.32, 2.0)");
   const q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
   tiled(instanced(root, stemGeometry(), sway(new THREE.MeshStandardMaterial({ roughness: 1 }), windTime, "stem", stemWind, flowerFade), flowers, (t, o, col) => {
     // 줄기는 꽃마다 길이와 기운 방향이 다르고, 잎이 붙은 쪽도 돌려 놓는다
@@ -317,7 +352,7 @@ export function buildWorld(root: THREE.Object3D) {
   }, TILE.flower), undefined, true);
   // 꽃송이: 줄기 끝에서 기운 쪽으로 더 숙인다. 꽃잎 수(5·6)마다 메시가 따로다
   for (const n of [5, 6]) {
-    tiled(instanced(root, flowerHeadGeometry(n), withCenter(sway(new THREE.MeshStandardMaterial({ roughness: 0.9 }), windTime, `bud${n}`, `transformed.xz += wind * ${f(SWAY_FLOWER)};`, flowerFade)), flowers.filter((t) => t.b.petals === n), (t, o, col) => {
+    tiled(instanced(root, flowerHeadGeometry(n), withCenter(sway(new THREE.MeshStandardMaterial({ roughness: 0.9 }), windTime, `bud${n}`, flowerWind("0.88"), flowerFade)), flowers.filter((t) => t.b.petals === n), (t, o, col) => {
       o.position.add(t.b.tip);
       o.quaternion.copy(t.b.head);
       o.scale.setScalar(t.b.size);
@@ -342,6 +377,8 @@ export function buildWorld(root: THREE.Object3D) {
     trees: trees.filter((t) => !t.hide).map((t) => ({ x: t.x, z: t.z })),
     // 보이는 꽃송이 자리와 그 윗면 높이(나비가 앉는다)
     flowers: flowers.filter((t) => !t.hide).map((t) => ({ x: t.x + t.b.tip.x, z: t.z + t.b.tip.z, top: t.y + t.b.tip.y + 0.03 })),
+    // 꽃 군락지 가운데와 반지름(나비가 많이 산다)
+    meadows: meadows.centers,
     // cam·fog를 주면 칸을 거른다. 안개 끝(시선 깊이)보다 먼 칸은 안개색뿐이라 끄고, 꽃은 안개가 시작하는 거리 근처에서 줄여 없앤다
     update(dt: number, cam?: THREE.Camera, fog?: THREE.Fog) {
       windTime.value += dt;
