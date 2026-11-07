@@ -23,6 +23,8 @@ const WAVES = [
 const vec4 = (f: (w: (typeof WAVES)[number]) => number) => `vec4(${WAVES.map((w) => f(w).toFixed(4)).join(",")})`;
 
 const uPhase = { value: new THREE.Vector4() };
+// 하늘 분위기: 물빛을 이 색 쪽으로 k만큼 끌어간다(낮 0, 노을에 살짝 따뜻하게, 밤에 푸르고 어둡게). daytime.ts가 정한다
+export const waterMood = { color: { value: new THREE.Color() }, k: { value: 0 } };
 const glslColor = (c: THREE.Color) => `vec3(${c.r.toFixed(4)},${c.g.toFixed(4)},${c.b.toFixed(4)})`;
 
 // 지형 메시의 높이(격자 n×n, 한 변 size)로 수면 아래 깊이 지도를 만든다. 지형을 다시 계산하지 않는다
@@ -41,15 +43,17 @@ export function waterMaterial(heights: THREE.BufferAttribute | THREE.Interleaved
   mat.onBeforeCompile = (s) => {
     s.uniforms.uWaterPhase = uPhase;
     s.uniforms.uWaterDepth = uDepth;
+    s.uniforms.uMoodCol = waterMood.color;
+    s.uniforms.uMoodK = waterMood.k;
     s.vertexShader = s.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec2 vWaterXZ;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWaterXZ = (modelMatrix * vec4(position, 1.0)).xz;");
     s.fragmentShader = s.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec2 vWaterXZ;\nuniform vec4 uWaterPhase;\nuniform sampler2D uWaterDepth;")
+      .replace("#include <common>", "#include <common>\nvarying vec2 vWaterXZ;\nuniform vec4 uWaterPhase;\nuniform sampler2D uWaterDepth;\nuniform vec3 uMoodCol;\nuniform float uMoodK;")
       .replace("#include <color_fragment>", `#include <color_fragment>
         float wDepth = texture2D(uWaterDepth, vWaterXZ / ${(size * 2).toFixed(1)} + 0.5).r * ${DEPTH_RANGE.toFixed(1)};
         float wAbsorb = 1.0 - exp(-${ABSORB.toFixed(2)} * wDepth);
-        diffuseColor.rgb = mix(${glslColor(COLOR_SHALLOW)}, ${glslColor(COLOR_DEEP)}, wAbsorb);
+        diffuseColor.rgb = mix(mix(${glslColor(COLOR_SHALLOW)}, ${glslColor(COLOR_DEEP)}, wAbsorb), uMoodCol, uMoodK);
         diffuseColor.a = ${ALPHA_MAX.toFixed(2)} * wAbsorb;
         // 사인 4개를 살짝 비틀어 값싼 노이즈처럼 쓴다. 기울기는 식으로 바로 얻는다
         vec2 wp = vWaterXZ + 0.8 * sin(vWaterXZ.yx * 0.23);

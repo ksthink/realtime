@@ -11,8 +11,12 @@ import { makeSkyline } from "./three/skyline";
 import { makeSplash } from "./three/splash";
 import { makePickGlow, makeStoneMesh } from "./three/stone";
 import { makeCritters } from "./three/critters";
+import { makeFireflies } from "./three/fireflies";
 import { buildWorld, groundAt } from "./three/world";
 import { seeThrough } from "./three/bigtree";
+import { makeDaytime } from "./three/daytime";
+import { makeSky } from "./three/sky";
+import { waterMood } from "./three/water";
 
 // 소원을 빌 수 있게 된 순간(ready)과 최대 층에 닿은 순간(max)에 한 번씩 묻는다
 export type WishPrompt = "ready" | "max";
@@ -34,7 +38,7 @@ type Remote = { blob: Blob; target: THREE.Vector3; targetYaw: number; moving: bo
 type Floater = { sprite: THREE.Sprite; t: number };
 
 const CAMS = ["따라가기", "하늘에서"];
-const SUN_OFF = new THREE.Vector3(8, 14, 6);
+const SUN_DIST = Math.hypot(8, 14, 6); // 그림자 빛을 내 자리에서 이만큼 떨어진, 해(밤에는 달) 쪽에 둔다
 const UP = new THREE.Vector3(0, 1, 0);
 // 안개(가까이, 멀리)와 카메라가 그리는 거리. 땅에서는 앞의 값, 동산 꼭대기에서는 뒤의 값으로 천천히 바뀐다
 const FOG_GROUND = [48, 150, 260], FOG_TOP = [110, 300, 320];
@@ -61,6 +65,12 @@ export class Game {
   readonly net: Net;
   private root = new THREE.Group();
   private sun: THREE.DirectionalLight;
+  private hemi = new THREE.HemisphereLight("#f3ecdf", "#b9c9b4", 1.6);
+  // 서울의 실제 해·달로 정한 하늘빛. night(0 한낮 ~ 1 깊은 밤)은 다른 곳(생물·반딧불)에서 읽어 간다
+  readonly daytime = makeDaytime();
+  get night() { return this.daytime.night; }
+  private sky = makeSky();
+  private starPx = typeof devicePixelRatio === "number" ? Math.min(devicePixelRatio, 2) : 1;
   private me: Blob;
   private stones = new Map<string, StoneView>();
   private towers = new Map<string, TowerView>();
@@ -98,6 +108,7 @@ export class Game {
   private skyline = makeSkyline();
   private world: ReturnType<typeof buildWorld>;
   private critters: ReturnType<typeof makeCritters>;
+  private fireflies: ReturnType<typeof makeFireflies>;
   private glowOn: StoneView | null = null;
   private glowK = 0;
   private waterT = 0;
@@ -115,7 +126,7 @@ export class Game {
     scene.background = new THREE.Color("#d9e3ef");
     scene.fog = new THREE.Fog("#d9e3ef", 48, 150);
     scene.add(this.root);
-    this.root.add(new THREE.HemisphereLight("#f3ecdf", "#b9c9b4", 1.6));
+    this.root.add(this.hemi, ...this.sky.objects);
     this.sun = new THREE.DirectionalLight("#ffe9c9", 3);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
@@ -127,6 +138,7 @@ export class Game {
     this.root.add(this.petals.points, this.splash.group, this.skyline.mesh);
     // 나비·물고기: 내 둘레에서만 사는 배경 생물. 휴대폰에서는 수를 줄인다
     this.critters = makeCritters(this.root, { flowers: this.world.flowers, meadows: this.world.meadows, perches: this.world.perches, splash: (x, z, yaw) => this.splash.emit(x, z, yaw), light: matchMedia(TOUCH_QUERY).matches });
+    this.fireflies = makeFireflies(this.root, { perches: this.world.perches, flowers: this.world.flowers, light: matchMedia(TOUCH_QUERY).matches });
 
     this.me = this.makeAvatar(meRow);
     const a = Math.random() * Math.PI * 2;
@@ -555,12 +567,26 @@ export class Game {
     this.updatePoseSend(dt);
     const p = this.me.g.position;
     this.world.update(dt, this.camera, this.scene.fog as THREE.Fog);
-    this.critters.update(dt, p);
+    this.critters.update(dt, p, this.night); // 밤이면 나비는 쉬고 새는 잔다
+    this.fireflies.update(dt, p, this.night); // 어두워지면 반딧불이가 나온다
     this.petals.update(dt, p);
     this.splash.update(dt);
-    this.sun.position.copy(p).add(SUN_OFF);
+    this.updateDaytime();
+    this.sun.position.copy(p).addScaledVector(this.daytime.lightDir, SUN_DIST);
     this.sun.target.position.copy(p);
     this.sun.target.updateMatrixWorld();
+  }
+
+  // 하늘·안개·빛·먼 산·물빛을 지금 하늘에 맞춘다. 한낮(해 높이 24° 위)은 예전 값 그대로다
+  private updateDaytime() {
+    const d = this.daytime.update(), scene = this.scene;
+    (scene.background as THREE.Color).copy(d.horizon);
+    (scene.fog as THREE.Fog).color.copy(d.horizon);
+    this.hemi.color.copy(d.hemiSky); this.hemi.groundColor.copy(d.hemiGround); this.hemi.intensity = d.hemiI;
+    this.sun.color.copy(d.light); this.sun.intensity = d.lightI;
+    this.skyline.tint(d.horizon, d.mountain);
+    waterMood.color.value.copy(d.water); waterMood.k.value = d.waterK;
+    this.sky.update(this.camera, d, this.starPx);
   }
 
   private updatePlayer(dt: number) {
@@ -943,6 +969,7 @@ export class Game {
     this.petals.dispose();
     this.splash.dispose();
     this.skyline.dispose();
+    this.fireflies.dispose();
     this.net.stop();
     this.scene.remove(this.root);
   }

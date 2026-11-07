@@ -53,7 +53,7 @@ type Dweller = { on: boolean; home: Home | null };
 // 0.5초마다: 멀어진 사는 곳의 동물은 거두고, 가까운 사는 곳부터 빈 동물을 채운다(풀 크기가 상한)
 function makeAssigner<T extends Dweller>(homes: Home[], list: T[], spawn: (c: T, i: number, h: Home) => void, hide: (i: number) => void) {
   let wait = 0;
-  return (dt: number, player: THREE.Vector3) => {
+  const assign = (dt: number, player: THREE.Vector3) => {
     if ((wait -= dt) > 0) return;
     wait = 0.5;
     const dist = (h: Home) => Math.hypot(h.x - player.x, h.z - player.z);
@@ -74,6 +74,7 @@ function makeAssigner<T extends Dweller>(homes: Home[], list: T[], spawn: (c: T,
       }
     }
   };
+  return Object.assign(assign, { reset() { for (const h of homes) h.members = []; } }); // 모두 거둔 뒤 부른다
 }
 
 // ── 나비 ──
@@ -158,8 +159,14 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
   const base = new THREE.Matrix4(), parts = [body, head, eye, shine, stalk, knob, upper, lower];
   const assign = makeAssigner(homes, list, (b, i, h) => { spawn(b, i, h); colorsDirty = true; }, (i) => { for (const p of parts) hide(p, i); });
 
+  let fade = 1; // 밤이면 0으로 줄어 사라진다(나비는 밤에 쉰다)
   return {
-    update(dt: number, player: THREE.Vector3, now: number) {
+    update(dt: number, player: THREE.Vector3, now: number, night: number) {
+      fade = THREE.MathUtils.clamp(fade + (night > 0.55 ? -dt : night < 0.45 ? dt : 0) * 0.5, 0, 1);
+      if (fade === 0) {
+        if (list.some((b) => b.on)) { list.forEach((b, i) => { if (b.on) { b.on = false; b.home = null; for (const p of parts) hide(p, i); } }); assign.reset(); for (const p of parts) p.mesh.instanceMatrix.needsUpdate = true; }
+        return;
+      }
       assign(dt, player);
       list.forEach((b, i) => {
         if (!b.on) return;
@@ -208,7 +215,7 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
           if (b.t > 0.6 && d < 0.08 && Math.abs(b.p.y - top(f)) < 0.12) { b.rest = true; b.t = -rand(2, 6); b.p.set(f.x, top(f), f.z); }
           if (b.t > 14) { b.target = flowerAway(h.x, h.z, h.r, player) ?? f; b.t = 0; } // 오래 헤매면 다른 꽃으로
         }
-        base.compose(b.p, _q.setFromEuler(_e.set(0, b.yaw, b.bank, "YXZ")), _s.setScalar(S));
+        base.compose(b.p, _q.setFromEuler(_e.set(0, b.yaw, b.bank, "YXZ")), _s.setScalar(S * fade));
         put(body, i, 0, base, 0, 0.02, 0);
         put(head, i, 0, base, 0, 0.03, 0.055);
         for (const s of [-1, 1]) {
@@ -421,10 +428,11 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
     return null;
   };
   // 둥지 둘레에서 앉을 자리. 캐릭터에서 넉넉히 떨어진 곳을 먼저 고른다
+  let sleepy = false; // 밤: 나무·덤불·난간에 앉아 잔다. 날던 새도 내려앉는다
   const choosePerch = (h: Home, player: THREE.Vector3): Perch => {
     let any: Perch | null = null;
     for (let k = 0; k < 8; k++) {
-      const c = Math.random() < 0.25 ? groundNear(h.x, h.z, h.r) : perchNear(h.x, h.z, h.r);
+      const c = !sleepy && Math.random() < 0.25 ? groundNear(h.x, h.z, h.r) : perchNear(h.x, h.z, h.r); // 밤에는 땅에 앉지 않는다
       if (!c) continue;
       any = c;
       if (Math.hypot(c.x - player.x, c.z - player.z) > 6) return c;
@@ -442,7 +450,7 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
   const takeOff = (b: Bird, player: THREE.Vector3, scared: boolean) => {
     const h = b.home!;
     b.fly = true; b.t = 0; b.hop = 0; b.peck = 0; b.head = b.headTo = 0;
-    b.roam = !scared && Math.random() < 0.35 ? rand(5, 16) : 0;
+    b.roam = !scared && !sleepy && Math.random() < 0.35 ? rand(5, 16) : 0;
     b.cruise = Math.random() < 0.3 ? rand(5, 10) : rand(1.5, 4);
     const away = scared ? Math.atan2(b.p.x - player.x, b.p.z - player.z) : b.yaw;
     b.v.set(Math.sin(away) * (scared ? 2.5 : 1.2), scared ? 2.8 : 2, Math.cos(away) * (scared ? 2.5 : 1.2));
@@ -476,17 +484,24 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
   const base = new THREE.Matrix4(), hm = new THREE.Matrix4(), _hq = new THREE.Quaternion(), _he = new THREE.Euler(), _hv = new THREE.Vector3(), _hs = new THREE.Vector3(1, 1, 1);
 
   return {
-    update(dt: number, player: THREE.Vector3, now: number) {
+    update(dt: number, player: THREE.Vector3, now: number, night: number) {
+      sleepy = night > (sleepy ? 0.45 : 0.55);
       assign(dt, player);
       list.forEach((b, i) => {
         if (!b.on) return;
         const h = b.home!;
-        let bodyPitch = 0, headPitch = 0;
+        let bodyPitch = 0, headPitch = 0, asleep = false;
         if (!b.fly) {
-          b.t -= dt;
           const kind = b.perch.kind;
+          if (sleepy && kind !== "ground") b.t = Math.max(b.t, 1); // 밤에는 날아가지 않고 계속 앉아 있다
+          b.t -= dt;
           if (Math.hypot(b.p.x - player.x, b.p.z - player.z) < SCARE[kind] || b.t <= 0) takeOff(b, player, b.t > 0);
-          else {
+          else if (sleepy && kind === "ground") takeOff(b, player, false); // 땅에 있던 새는 잘 자리로 날아간다
+          else if (sleepy) {
+            // 잠: 머리를 몸에 묻고 눈을 감는다. 숨 쉬듯 아주 조금 오르내린다
+            asleep = true; headPitch = 0.35; b.headTo = 0; b.hop = 0; b.peck = 0;
+            b.fold += (1 - b.fold) * Math.min(1, dt * 12);
+          } else {
             // 앉아서: 두리번거리기, 콩콩 뛰기(땅), 쪼기(땅), 제자리에서 돌아앉기, 꽁지 까딱
             if (b.hop <= 0 && (b.act -= dt) <= 0) {
               const r = Math.random();
@@ -520,6 +535,7 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
         if (b.fly) {
           b.t += dt;
           const g = b.goal, dx = g.x - b.p.x, dz = g.z - b.p.z, dh = Math.hypot(dx, dz);
+          if (sleepy && b.roam > 0) { b.roam = 0; setPerch(b, choosePerch(h, player)); } // 어두워지면 자유 비행을 그만두고 잘 자리로
           const landing = b.roam <= 0;
           if (!landing) {
             b.roam -= dt;
@@ -571,8 +587,8 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
         const flap = 0.25 + Math.sin(b.phase) * 0.95; // 위로 1.2, 아래로 0.7
         for (const s of [-1, 1]) {
           const k = s < 0 ? 0 : 1;
-          put(eye, i, k, hm, s * 0.0194, 0.022, 0.043);
-          put(shine, i, k, hm, s * 0.0215, 0.0253, 0.0479);
+          if (asleep) { put(eye, i, k, hm, s * 0.0194, 0.02, 0.043, 0, 0, 0, 1, 0.18, 1); put(shine, i, k, hm, 0, 0, 0, 0, 0, 0, 0, 0, 0); } // 감은 눈: 납작한 선
+          else { put(eye, i, k, hm, s * 0.0194, 0.022, 0.043); put(shine, i, k, hm, s * 0.0215, 0.0253, 0.0479); }
           put(blush, i, k, hm, s * 0.0255, 0.0075, 0.0364, 0, s * 0.9, 0, 1, 0.7, 0.35);
           // 날개: 펴면 옆으로 뻗어 위아래로 치고(fold 0), 접으면 몸 옆에 세워 뒤로 붙인다(fold 1)
           const w = b.fold, rz = b.fly ? s * flap * (1 - w) - s * 0.15 * w : -s * 0.15;
@@ -755,12 +771,13 @@ export function makeCritters(root: THREE.Object3D, env: CritterEnv) {
   const birds = makeBirds(root, env.light ? 6 : 12, env);
   let now = 0;
   return {
-    update(dt: number, player: THREE.Vector3) {
+    // night: 0 낮 ~ 1 깊은 밤. 나비는 밤에 사라지고 새는 잔다
+    update(dt: number, player: THREE.Vector3, night = 0) {
       now += dt;
-      flies.update(dt, player, now);
+      flies.update(dt, player, now, night);
       fish.update(dt, player, now);
       minnows.update(dt, player, now);
-      birds.update(dt, player, now);
+      birds.update(dt, player, now, night);
     },
   };
 }

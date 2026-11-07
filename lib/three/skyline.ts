@@ -2,9 +2,10 @@ import * as THREE from "three";
 import { clamp, lerp, rng } from "../terrain";
 
 // 마을 너머 멀리 어렴풋이 보이는 산줄기. 카메라를 따라다녀 늘 지평선에 걸려 있고, 먼저 그리며 깊이를 쓰지 않아 마을의 모든 것이 그 앞에 그려진다.
-// 안개를 받지 않고 대신 꼭짓점 색을 하늘색 쪽으로 섞는다. 밑동은 하늘색과 같아 땅 끝·안개와 이음매가 없다
+// 안개를 받지 않고 대신 꼭짓점 색을 하늘색 쪽으로 섞는다. 밑동은 하늘색과 같아 땅 끝·안개와 이음매가 없다.
+// 하늘색은 시간에 따라 바뀌므로 산 색(미리 덜어 둔 몫)과 하늘색을 섞는 비율(haze)을 따로 담고, 그릴 때 지금 하늘색을 더한다
 
-const HAZE = "#d9e3ef"; // 하늘·안개색
+const HAZE = "#d9e3ef"; // 낮 하늘·안개색
 const R = 200; // 그리는 반경. 카메라 far(260)보다 안쪽이면 된다
 const COLS = 360; // 둘레 칸 수(1°)
 const BASE = -0.3; // 밑동 높이(눈높이 기준, tan 단위). 하늘에서 내려다봐도 빈틈이 없게 충분히 내린다
@@ -76,7 +77,7 @@ function layerHeights(l: Layer, idx: number) {
 export function makeSkyline() {
   const haze = new THREE.Color(HAZE), c = new THREE.Color(), snow = new THREE.Color("#f4f7fb");
   const per = (COLS + 1) * ROWS.length;
-  const pos = new Float32Array(per * LAYERS.length * 3), col = new Float32Array(per * LAYERS.length * 3);
+  const pos = new Float32Array(per * LAYERS.length * 3), col = new Float32Array(per * LAYERS.length * 3), hz = new Float32Array(per * LAYERS.length);
   const index: number[] = [];
   LAYERS.forEach((l, li) => {
     const h = layerHeights(l, li), base = new THREE.Color(l.color), o = li * per;
@@ -95,8 +96,10 @@ export function makeSkyline() {
         const fade = clamp((y + 0.005) / (h[i] * 0.75 + 0.01), 0, 1);
         c.copy(base).multiplyScalar(0.92 + 0.16 * lit);
         if (top && h[i] > 0.19) c.lerp(snow, clamp((h[i] - 0.19) / 0.03, 0, 1) * 0.45); // 가장 높은 봉우리만 희끗하게
-        c.lerp(haze, 1 - (1 - l.mix) * fade * fade);
+        const m = 1 - (1 - l.mix) * fade * fade;
+        c.multiplyScalar(1 - m);
         col.set([c.r, c.g, c.b], v * 3);
+        hz[v] = m;
       }
       if (i === COLS) continue;
       for (let k = 0; k < ROWS.length - 1; k++) {
@@ -108,8 +111,15 @@ export function makeSkyline() {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  geo.setAttribute("haze", new THREE.BufferAttribute(hz, 1));
   geo.setIndex(index); // 먼 층부터 쌓여 있어 차례대로 그리면 가까운 층이 위에 온다
   const mat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, toneMapped: false, depthWrite: false, side: THREE.DoubleSide });
+  const uHaze = { value: haze };
+  mat.onBeforeCompile = (s) => {
+    s.uniforms.uHaze = uHaze;
+    s.vertexShader = s.vertexShader.replace("#include <common>", "#include <common>\nattribute float haze;\nvarying float vHaze;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvHaze = haze;");
+    s.fragmentShader = s.fragmentShader.replace("#include <common>", "#include <common>\nuniform vec3 uHaze;\nvarying float vHaze;").replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb += vHaze * uHaze;");
+  };
   const mesh = new THREE.Mesh(geo, mat);
   mesh.renderOrder = -100; // 맨 먼저 그린다. 깊이를 쓰지 않으니 마을이 늘 그 위에 그려진다
   mesh.frustumCulled = false;
@@ -121,6 +131,11 @@ export function makeSkyline() {
     update(cam: THREE.Camera) {
       mesh.position.copy(cam.position);
       mesh.updateMatrix();
+    },
+    // 지금 하늘색(밑동·먼 산이 녹아드는 색)과 산 색에 곱할 빛깔(밤에는 푸르고 어둡게)
+    tint(sky: THREE.Color, mountain: THREE.Color) {
+      haze.copy(sky);
+      mat.color.copy(mountain);
     },
     dispose() {
       geo.dispose();
