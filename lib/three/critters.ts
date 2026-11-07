@@ -63,12 +63,14 @@ type Butterfly = {
 };
 
 function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
-  const S = 1.5; // 게임 카메라에서 잘 보이도록 실제보다 크게
+  const S = 1.05; // 게임 카메라에서 보이도록 실제보다 조금 크게
   const body = part(root, new THREE.CapsuleGeometry(0.018, 0.045, 4, 8).rotateX(Math.PI / 2), n, 1);
   const head = part(root, new THREE.SphereGeometry(0.034, 12, 10), n, 1);
-  const eye = part(root, new THREE.SphereGeometry(0.009, 8, 6), n, 2, { color: "#2f2a36", roughness: 0.4 });
-  const stalk = part(root, new THREE.CylinderGeometry(0.003, 0.003, 0.07, 4).translate(0, 0.035, 0), n, 2, { color: "#5a4a5e" });
-  const knob = part(root, new THREE.SphereGeometry(0.011, 8, 6), n, 2);
+  const eye = part(root, new THREE.SphereGeometry(0.013, 10, 8), n, 2, { color: "#2f2a36", roughness: 0.35 });
+  const shine = part(root, new THREE.SphereGeometry(0.0045, 6, 5), n, 2, { color: "#ffffff", emissive: "#ffffff", emissiveIntensity: 0.6 });
+  // 더듬이는 짧고 가늘게, 머리와 같은 색으로 해서 눈에 덜 띄게
+  const stalk = part(root, new THREE.CylinderGeometry(0.002, 0.002, 0.045, 4).translate(0, 0.0225, 0), n, 2);
+  const knob = part(root, new THREE.SphereGeometry(0.007, 8, 6), n, 2);
   const wingGeo = wingGeometry();
   const upper = part(root, wingGeo, n, 2, { vertexColors: true, side: THREE.DoubleSide }, true);
   const lower = part(root, wingGeo, n, 2, { vertexColors: true, side: THREE.DoubleSide }, true);
@@ -95,7 +97,7 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
     b.yaw = Math.random() * Math.PI * 2;
     const h = Math.random(), wing = pastel(h, 0.8, 0.7);
     tint(upper, i, wing); tint(lower, i, pastel(h + 0.08, 0.75, 0.76));
-    tint(body, i, pastel(h + 0.5, 0.25, 0.45)); tint(head, i, pastel(h + 0.5, 0.25, 0.5)); tint(knob, i, pastel(h + 0.15, 0.7, 0.7));
+    tint(body, i, pastel(h + 0.5, 0.25, 0.45)); tint(head, i, pastel(h + 0.5, 0.25, 0.5)); tint(stalk, i, pastel(h + 0.5, 0.25, 0.5)); tint(knob, i, pastel(h + 0.5, 0.3, 0.6));
   };
   let colorsDirty = true;
   const base = new THREE.Matrix4();
@@ -104,7 +106,7 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
     update(dt: number, player: THREE.Vector3, now: number) {
       list.forEach((b, i) => {
         if (!b.on || Math.hypot(b.p.x - player.x, b.p.z - player.z) > FAR) { b.on = false; spawn(b, i, player.x, player.z); colorsDirty ||= b.on; }
-        if (!b.on) { for (const p of [body, head, eye, stalk, knob, upper, lower]) hide(p, i); return; }
+        if (!b.on) { for (const p of [body, head, eye, shine, stalk, knob, upper, lower]) hide(p, i); return; }
         b.t += dt;
         const f = b.target!;
         if (b.rest) {
@@ -137,15 +139,17 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
         put(head, i, 0, base, 0, 0.03, 0.055);
         for (const s of [-1, 1]) {
           const k = s < 0 ? 0 : 1;
-          put(eye, i, k, base, s * 0.016, 0.038, 0.084);
-          put(stalk, i, k, base, s * 0.01, 0.045, 0.07, 0.5, 0, -s * 0.35);
-          put(knob, i, k, base, s * 0.034, 0.105, 0.105);
+          // 큰 눈을 얼굴 앞쪽에, 위쪽에 작은 흰 반짝임
+          put(eye, i, k, base, s * 0.0135, 0.0375, 0.0808);
+          put(shine, i, k, base, s * 0.0125, 0.043, 0.093);
+          put(stalk, i, k, base, s * 0.009, 0.058, 0.062, 0.5, 0, -s * 0.35);
+          put(knob, i, k, base, s * 0.024, 0.095, 0.082);
           // 오른쪽(+x) 날개는 +flap만큼, 왼쪽은 거울로
           put(upper, i, k, base, 0, 0.03, 0.015, 0, -s * 0.35, s * b.flap, s * 0.095, 1, 0.08);
           put(lower, i, k, base, 0, 0.025, -0.025, 0, s * 0.45, s * b.flap * 0.9, s * 0.07, 1, 0.06);
         }
       });
-      for (const p of [body, head, eye, stalk, knob, upper, lower]) {
+      for (const p of [body, head, eye, shine, stalk, knob, upper, lower]) {
         p.mesh.instanceMatrix.needsUpdate = true;
         if (colorsDirty && p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true;
       }
