@@ -485,7 +485,7 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
 
   return {
     update(dt: number, player: THREE.Vector3, now: number, night: number) {
-      sleepy = night > (sleepy ? 0.45 : 0.55);
+      sleepy = night > (sleepy ? 0.22 : 0.3); // 해 질 녘(해가 지평선에 닿을 무렵)부터 잘 자리로 간다
       assign(dt, player);
       list.forEach((b, i) => {
         if (!b.on) return;

@@ -130,6 +130,7 @@ export class Game {
     private font: string,
     start?: PlayerSpot,
   ) {
+    this.daytime.update(); // 첫 프레임 전에 지금 시각의 하늘을 구해 둔다(밤에 들어오자마자 동물이 낮처럼 나오지 않게)
     scene.background = new THREE.Color("#d9e3ef");
     scene.fog = new THREE.Fog("#d9e3ef", 48, 150);
     scene.add(this.root);
