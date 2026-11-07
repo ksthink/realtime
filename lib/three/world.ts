@@ -47,7 +47,8 @@ type Item = { x: number; y: number; z: number; r: () => number; hide?: boolean }
 const OLD_WORLD = 80;
 // 식생을 나누는 격자 칸(m). 인덱스가 많은 것은 잘게, 적은 것은 크게 나눠 그리기 호출을 줄인다.
 // 꽃은 안개 시작 거리 × FLOWER_FADE 사이에서 사라진다. 땅은 GROUND_CHUNK칸씩 나눈다
-const TILE = { trunk: 48, canopy: 24, bush: 32, flower: 24, rock: 48 }, FLOWER_FADE = [0.94, 1.35], GROUND_CHUNK = 62;
+// 꽃은 작아서 40m쯤 너머로는 거의 보이지 않으므로 그 안에서 사라지게 해 그리는 양을 줄인다
+const TILE = { trunk: 48, canopy: 24, bush: 32, flower: 24, rock: 48 }, FLOWER_FADE = [0.6, 0.85], GROUND_CHUNK = 62;
 // 넓히기 전 땅(동산·다리 둑 없음, 가장자리 산이 OLD_WORLD - 6부터). 예전 식생 자리를 고를 때만 쓴다
 const oldGround = (x: number, z: number) => {
   const r = Math.hypot(x, z), h = baseTerrainY(x, z, false);
@@ -74,16 +75,18 @@ function trunkGeometry() {
   return g.deleteAttribute("uv").translate(0, -0.5, 0);
 }
 // 꽃 줄기 + 작은 잎 한 장. 높이 0.3(가운데가 원점)
+// 꽃이 수천 송이라 정점을 아낀다: 줄기는 뚜껑 없는 삼각기둥, 잎은 얇은 판(양면으로 그린다)
 function stemGeometry() {
-  const leaf = new THREE.SphereGeometry(1, 6, 4).scale(0.045, 0.012, 0.022).translate(0.04, 0, 0).rotateZ(0.5).translate(0, -0.03, 0);
-  return mergeGeometries([new THREE.CylinderGeometry(0.009, 0.012, 0.3, 5), leaf].map((x) => x.deleteAttribute("uv")))!;
+  const leaf = new THREE.CircleGeometry(1, 6).rotateX(-Math.PI / 2).scale(0.045, 1, 0.022).translate(0.04, 0, 0).rotateZ(0.5).translate(0, -0.03, 0);
+  return mergeGeometries([new THREE.CylinderGeometry(0.009, 0.012, 0.3, 3, 1, true), leaf].map((x) => x.deleteAttribute("uv")))!;
 }
 // 꽃송이: 둥근 꽃잎 n장과 노란 꽃술. aCenter(1이면 꽃술)로 꽃술만 노랗게 칠한다
 function flowerHeadGeometry(n: number) {
   const parts: THREE.BufferGeometry[] = [];
   const w = 0.032 * (5 / n) ** 0.6; // 꽃잎이 많을수록 조금 좁게
-  for (let k = 0; k < n; k++) parts.push(new THREE.SphereGeometry(1, 5, 3).scale(0.05, 0.016, w).translate(0.045, 0, 0).rotateY((k / n) * Math.PI * 2));
-  parts.push(new THREE.SphereGeometry(0.028, 6, 4).scale(1, 0.6, 1).translate(0, 0.008, 0));
+  // 꽃잎은 얇은 판(양면). 살짝 위로 휘게 바깥쪽을 들어 납작해 보이지 않게 한다
+  for (let k = 0; k < n; k++) parts.push(new THREE.CircleGeometry(1, 7).rotateX(-Math.PI / 2).scale(0.05, 1, w).translate(0.045, 0, 0).rotateZ(-0.18).rotateY((k / n) * Math.PI * 2));
+  parts.push(new THREE.SphereGeometry(0.028, 5, 3).scale(1, 0.6, 1).translate(0, 0.008, 0));
   const g = mergeGeometries(parts.map((x) => x.deleteAttribute("uv")))!; // 정점을 나눠 쓰는(인덱스) 채로 합친다
   const center = new Float32Array(g.attributes.position.count);
   center.fill(1, g.attributes.position.count - parts[n].attributes.position.count);
@@ -317,6 +320,7 @@ export function buildWorld(root: THREE.Object3D) {
   const tiled = (ms: THREE.InstancedMesh[], depth?: THREE.Material, flower = false) => {
     for (const m of ms) {
       if (depth) m.customDepthMaterial = depth;
+      if (flower) m.castShadow = false; // 꽃 그림자는 너무 작아 보이지 않는데 그림자용으로 한 번 더 그리게 되므로 끈다
       cull.push([m, m.boundingSphere!, flower]);
     }
   };
@@ -361,14 +365,14 @@ export function buildWorld(root: THREE.Object3D) {
   ).concat(meadows.flowers);
   // 꽃은 바람에 살랑인다: 줄기는 밑동에서 휘고 꽃송이는 줄기 끝을 따라간다. 송이마다 조금씩 다른 박자로 흔들린다.
   // 줄기와 꽃송이는 서로 다르게 돌려 놓은 인스턴스라, 흔들림을 세계 방향으로 구해 각자의 공간으로 되돌려 더한다(그래야 꽃송이가 줄기 끝에 붙어 있다)
-  // 그림자는 너무 작아 흔들지 않는다
+  // 꽃은 그림자를 드리우지 않는다(tiled에서 끈다)
   const flowerWind = (k: string) => `
     vec2 fp = instanceMatrix[3].xz;
     float flutter = 0.7 + 0.5 * sin(uWindTime * 2.6 + fp.x * 0.9 + fp.y * 1.3);
     transformed += inverse(mat3(instanceMatrix)) * vec3(wind.x, 0.0, wind.y) * ${f(SWAY_FLOWER)} * flutter * (${k});`;
   const stemWind = flowerWind("pow((position.y + 0.15) / 0.32, 2.0)");
   const q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
-  tiled(instanced(root, stemGeometry(), sway(new THREE.MeshStandardMaterial({ roughness: 1 }), windTime, "stem", stemWind, flowerFade), flowers, (t, o, col) => {
+  tiled(instanced(root, stemGeometry(), sway(new THREE.MeshStandardMaterial({ roughness: 1, side: THREE.DoubleSide }), windTime, "stem", stemWind, flowerFade), flowers, (t, o, col) => {
     // 줄기는 꽃마다 길이와 기운 방향이 다르고, 잎이 붙은 쪽도 돌려 놓는다
     o.position.add(new THREE.Vector3(0, 0.15 * t.b.len, 0).applyQuaternion(t.b.lean));
     o.quaternion.copy(t.b.lean).multiply(q.setFromAxisAngle(up, t.b.yaw));
@@ -377,7 +381,7 @@ export function buildWorld(root: THREE.Object3D) {
   }, TILE.flower), undefined, true);
   // 꽃송이: 줄기 끝에서 기운 쪽으로 더 숙인다. 꽃잎 수(5·6)마다 메시가 따로다
   for (const n of [5, 6]) {
-    tiled(instanced(root, flowerHeadGeometry(n), withCenter(sway(new THREE.MeshStandardMaterial({ roughness: 0.9 }), windTime, `bud${n}`, flowerWind("0.88"), flowerFade)), flowers.filter((t) => t.b.petals === n), (t, o, col) => {
+    tiled(instanced(root, flowerHeadGeometry(n), withCenter(sway(new THREE.MeshStandardMaterial({ roughness: 0.9, side: THREE.DoubleSide }), windTime, `bud${n}`, flowerWind("0.88"), flowerFade)), flowers.filter((t) => t.b.petals === n), (t, o, col) => {
       o.position.add(t.b.tip);
       o.quaternion.copy(t.b.head);
       o.scale.setScalar(t.b.size);
