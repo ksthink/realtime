@@ -3,7 +3,7 @@ import { type Blob, animateBlob, createBodyGeometry, encodeBody, makeBlob } from
 import paths from "./npc-paths.json";
 
 // ── 나무지기: 세계 곳곳의 나무를 찾아다니며 가꾸는 숲의 정령 ──
-// 슬라임 같은 반투명 물방울 몸에 얼굴·팔·정수리 새싹이 있고, 발 없이 둥둥 떠다닌다. 얼굴·팔·동작은 캐릭터(makeBlob)를 쓰고 다리만 숨긴다.
+// 슬라임 같은 반투명 구 몸에 얼굴·팔·정수리 새싹이 있고, 발 없이 둥둥 떠다닌다. 얼굴·팔·동작은 캐릭터(makeBlob)를 쓰고 다리만 숨긴다.
 // 다닐 길은 scripts/gen-npc-paths.ts가 미리 만든 npc-paths.json을 쓴다. 위치는 서버 시각만으로 계산하므로
 // 네트워크로 주고받지 않아도 모든 접속자가 같은 자리에서 본다
 
@@ -94,18 +94,10 @@ function sprout(top: number) {
   return g;
 }
 
-// 몸: 슬라임 같은 물방울. 아래는 둥글고 위로 갈수록 좁아져 끝이 살짝 뾰족하다.
+// 몸: 반투명 슬라임 구.
 // 빚기 화면의 굳히기(bake)처럼 바닥을 y=0, 키를 1.45로 맞춰 캐릭터 몸과 같은 형식으로 만든다
 export function npcBody() {
-  const geo = createBodyGeometry(), pos = geo.attributes.position, v = new THREE.Vector3();
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    if (v.y > 0) {
-      const k = 1 - 0.85 * Math.pow(v.y, 1.5); // 위로 갈수록 좁게
-      v.x *= k; v.z *= k; v.y *= 1.4;
-    } else v.y *= 0.92; // 아래는 살짝 퍼진 둥근 바닥
-    pos.setXYZ(i, v.x, v.y, v.z);
-  }
+  const geo = createBodyGeometry();
   geo.computeBoundingBox();
   geo.translate(0, -geo.boundingBox!.min.y, 0);
   const h = geo.boundingBox!.max.y - geo.boundingBox!.min.y;
@@ -115,7 +107,7 @@ export function npcBody() {
   return out;
 }
 
-// 물방울 재질: 반투명에 매끈하고, 보는 각도에 따라 무지개빛(박막 간섭)이 돈다. 안쪽이 은은하게 빛나 빛이 비쳐 든 것처럼 보인다.
+// 슬라임 재질: 반투명에 매끈하고, 보는 각도에 따라 무지개빛(박막 간섭)이 돈다. 안쪽이 은은하게 빛나 빛이 비쳐 든 것처럼 보인다.
 // 진짜 투과(transmission)는 화면을 한 번 더 그려야 해서 휴대폰에서 무거우므로 쓰지 않는다
 function slime(color: THREE.Color) {
   return new THREE.MeshPhysicalMaterial({
