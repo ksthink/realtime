@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { LANTERN_H, type Lantern, type LanternMode, makeLantern, updateLantern } from "./lantern";
 import { lerp, rng } from "../terrain";
 
 // ── 몸통: 구 위상을 공유하는 정점. 네트워크로는 고유 정점만 int16으로 보낸다 (약 6.5KB) ──
@@ -140,6 +141,8 @@ export type Blob = {
   carrying: boolean; walk: number; bob: number; baseY: number; prayK: number;
   restK: number; waveK: number; joyK: number; sadK: number; joyH: number; sitDrop: number;
   holdPoint: THREE.Vector3;
+  // 밤 랜턴: 왼손(arms[1]) 안에서 쥐는 자리, 허리에 거는 자리, 땅에 세우는 자리(캐릭터 그룹 좌표)
+  lantern: Lantern; grip: THREE.Vector3; hip: THREE.Vector3; ground: THREE.Vector3;
   idleWait: number; idleKind: IdleAction; idleOn: boolean; idleT: number; idleK: number; idleArm: 0 | 1;
 };
 
@@ -219,6 +222,7 @@ export function makeBlob(init: BlobInit, font: string): Blob {
   const prayArms = new THREE.Group();
   prayArms.visible = false;
   g.add(prayArms);
+  const grip = new THREE.Vector3();
   const armY = legLen + H * (0.52 + r() * 0.16), armL = 0.8 + r() * 0.5, handS = 0.8 + r() * 0.5;
   // 얼굴(몸통 높이의 50~78%)을 가리지 않도록 손은 그 아래 가슴 앞에 모은다
   const prayY = legLen + H * 0.34;
@@ -271,6 +275,7 @@ export function makeBlob(init: BlobInit, font: string): Blob {
     p.add(hand);
     g.add(p);
     arms.push(p);
+    if (s > 0) grip.copy(hand.position).add(new THREE.Vector3(0, 0.06 * handS, 0).applyQuaternion(hand.quaternion)); // 랜턴 손잡이를 쥐는 손바닥
 
     // 합장 팔: 어깨 → 팔꿈치(바깥 아래) → 가슴 앞. 손바닥은 세워서 가운데에서 맞댄다
     const sx = p.position.x, sy = p.position.y, sz = p.position.z;
@@ -319,7 +324,13 @@ export function makeBlob(init: BlobInit, font: string): Blob {
   // 앉을 때 내려가는 높이: 엉덩이와 몸 바닥 중 낮은 쪽이 땅 바로 위에 오도록
   const sitDrop = Math.max(0, Math.min(legs[0].position.y, legs[1].position.y, legLen + geo.boundingBox!.min.y) - 0.06);
 
+  // 허리: 왼쪽 옆구리 아래쪽 바깥. 땅: 그 옆 조금 앞
+  const hipY = legLen + H * 0.4, side = hit(5, hipY, 0, -1, 0, 0);
+  const hip = new THREE.Vector3((side ? side.point.x : W * 0.5) + 0.05, hipY + 0.06, 0.04);
+  const ground = new THREE.Vector3(hip.x + 0.22, LANTERN_H, 0.28);
+
   return {
+    lantern: makeLantern(g), grip, hip, ground,
     g, body, mouth, legs, arms, prayArms, coverArms,
     yaw: 0, state: "idle", stateT: 0, carrying: false, walk: 0, bob: 0, baseY: 0, prayK: 0,
     restK: 0, waveK: 0, joyK: 0, sadK: 0, joyH: 0, sitDrop,
@@ -430,4 +441,13 @@ export function animateBlob(ch: Blob, dt: number, moving: boolean) {
   const mouthY = lerp(lerp(carry ? 0.45 : ch.state === "pickup" ? 1.3 : 1, 1.7, ch.joyK), 0.55, ch.sadK);
   ch.mouth.scale.set(1 + 0.3 * ch.joyK - 0.35 * ch.sadK, mouthY, 1);
   ch.g.rotation.y = ch.yaw;
+
+  // 랜턴: 손을 오래 비우면(합장·앉기) 땅에, 잠깐 비우면(돌·얼굴 가리기) 허리에, 아니면 왼손에
+  const mode: LanternMode = ch.state === "pray" || ch.state === "rest" ? "ground"
+    : carry || ch.state === "pickup" || ch.state === "place" || ch.state === "sad" ? "hip" : "hand";
+  if (mode === "hand") _lt.copy(ch.grip).applyEuler(ch.arms[1].rotation).add(ch.arms[1].position);
+  else if (mode === "hip") _lt.copy(ch.hip);
+  else _lt.copy(ch.ground).setY(LANTERN_H + ch.baseY - ch.g.position.y); // 앉느라 몸이 내려가도 땅에 붙어 있게
+  updateLantern(ch.lantern, dt, mode, _lt, moving, ch.walk);
 }
+const _lt = new THREE.Vector3();

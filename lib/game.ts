@@ -12,6 +12,7 @@ import { makeSplash } from "./three/splash";
 import { makePickGlow, makeStoneMesh } from "./three/stone";
 import { makeCritters } from "./three/critters";
 import { makeFireflies } from "./three/fireflies";
+import { lanternLit, tickLanterns } from "./three/lantern";
 import { buildWorld, groundAt } from "./three/world";
 import { seeThrough } from "./three/bigtree";
 import { makeDaytime } from "./three/daytime";
@@ -56,6 +57,7 @@ const FOV_MIN = 50, FOV_WIDE = 60, FOV_MAX = 76;
 const PORTRAIT_PULL = 1.3; // 세로 화면에서는 카메라를 이만큼 더 뒤로 빼 양옆이 더 보이게 한다 // 단계가 바뀔 때 사라졌다 나타나는 시간(초)
 const PICK_SWITCH_GAIN = 0.15; // 다른 돌이 이만큼(미터) 더 가까워야 대상을 바꾼다. 거리가 비슷한 돌 사이에서 깜빡이지 않게 한다
 const GLOW_FADE = 0.12; // 대상 표시가 사라지거나 나타나는 시간(초)
+const LANTERN_LIGHT = 2.2; // 내 랜턴 빛 세기(칸델라). 발밑 둘레 몇 m를 따뜻하게 비춘다
 const TOUCH_QUERY = "(hover: none), (pointer: coarse)"; // globals.css의 모바일 조건과 같다
 
 // 다시 빚기를 취소하고 돌아올 자리
@@ -109,6 +111,9 @@ export class Game {
   private world: ReturnType<typeof buildWorld>;
   private critters: ReturnType<typeof makeCritters>;
   private fireflies: ReturnType<typeof makeFireflies>;
+  // 내 랜턴만 땅을 비추는 진짜 빛을 단다(PC). 다른 사람 랜턴과 휴대폰은 빛 번짐만. 낮에는 꺼서(visible) 계산하지 않는다
+  private lanternLight: THREE.PointLight | null = null;
+  private lanternAt = new THREE.Vector3();
   private glowOn: StoneView | null = null;
   private glowK = 0;
   private waterT = 0;
@@ -138,6 +143,11 @@ export class Game {
     this.root.add(this.petals.points, this.splash.group, this.skyline.mesh);
     // 나비·물고기: 내 둘레에서만 사는 배경 생물. 휴대폰에서는 수를 줄인다
     this.critters = makeCritters(this.root, { flowers: this.world.flowers, meadows: this.world.meadows, perches: this.world.perches, splash: (x, z, yaw) => this.splash.emit(x, z, yaw), light: matchMedia(TOUCH_QUERY).matches });
+    if (!matchMedia(TOUCH_QUERY).matches) {
+      this.lanternLight = new THREE.PointLight("#ffc77d", 0, 6, 1.4);
+      this.lanternLight.visible = false;
+      this.root.add(this.lanternLight);
+    }
     this.fireflies = makeFireflies(this.root, { perches: this.world.perches, flowers: this.world.flowers, light: matchMedia(TOUCH_QUERY).matches });
 
     this.me = this.makeAvatar(meRow);
@@ -556,6 +566,7 @@ export class Game {
 
   // ───────── 프레임 ─────────
   update(dt: number) {
+    tickLanterns(this.night); // 어두워지면 랜턴을 들고 불을 켠다(모두 함께)
     this.updatePlayer(dt);
     this.updateRemotes(dt);
     this.updateStones(dt);
@@ -568,7 +579,16 @@ export class Game {
     const p = this.me.g.position;
     this.world.update(dt, this.camera, this.scene.fog as THREE.Fog);
     this.critters.update(dt, p, this.night); // 밤이면 나비는 쉬고 새는 잔다
-    this.fireflies.update(dt, p, this.night); // 어두워지면 반딧불이가 나온다
+    // 내 랜턴 자리(유리 가운데). 반딧불이가 살짝 모여들고, PC에서는 진짜 빛이 여기서 나온다
+    const lt = this.me.lantern, lit = lt.g.visible;
+    if (lit) lt.g.localToWorld(this.lanternAt.set(0, -0.125, 0));
+    this.fireflies.update(dt, p, this.night, lit ? this.lanternAt : null); // 어두워지면 반딧불이가 나온다
+    if (this.lanternLight) {
+      const k = lit ? lanternLit.light : 0;
+      this.lanternLight.visible = k > 0.01;
+      this.lanternLight.intensity = k * LANTERN_LIGHT;
+      this.lanternLight.position.copy(this.lanternAt);
+    }
     this.petals.update(dt, p);
     this.splash.update(dt);
     this.updateDaytime();

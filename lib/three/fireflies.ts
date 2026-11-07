@@ -158,7 +158,8 @@ export function makeFireflies(root: THREE.Object3D, env: Env) {
   let now = 0;
   return {
     points,
-    update(dt: number, player: THREE.Vector3, night: number) {
+    // lantern: 내 랜턴 자리(없으면 null). 호기심 많은 몇 마리가 둘레로 살짝 모여들어 맴돈다
+    update(dt: number, player: THREE.Vector3, night: number, lantern: THREE.Vector3 | null = null) {
       const k = smooth(NIGHT[0], NIGHT[1], night);
       if (k <= 0) { points.visible = false; return; } // 낮에는 아무것도 하지 않는다
       points.visible = true;
@@ -182,6 +183,13 @@ export function makeFireflies(root: THREE.Object3D, env: Env) {
             want = f.yaw;
             if ((f.x - h.x) ** 2 + (f.z - h.z) ** 2 > h.r * h.r) want = Math.atan2(h.x - f.x, h.z - f.z); // 제 터로 돌아온다
             if (pd < 1.6) want = Math.atan2(px, pz); // 캐릭터를 살짝 비켜 간다
+            // 랜턴: 네 마리 중 한 마리꼴로, 5m 안이면 랜턴 둘레 0.6~1m를 천천히 돈다(제 터를 벗어나도 따라온다)
+            if (lantern && f.seed < 0.25 && (f.x - lantern.x) ** 2 + (f.z - lantern.z) ** 2 < 25) {
+              const a = now * 0.35 + f.w1 * 6, r = 0.6 + (f.w2 % 1) * 0.4;
+              want = Math.atan2(lantern.x + Math.sin(a) * r - f.x, lantern.z + Math.cos(a) * r - f.z);
+              f.altT = Math.max(0.3, lantern.y - g + Math.sin(now * 0.8 + f.w2) * 0.3);
+              f.t = Math.max(f.t, 1); // 맴도는 동안은 앉으러 가지 않는다
+            }
             if (Math.random() < dt * 0.15) f.altT = ALT[0] + Math.pow(Math.random(), 1.6) * (ALT[1] - ALT[0]);
             if ((f.t -= dt) <= 0) {
               // 앉을 자리를 고른다(캐릭터 바로 옆은 피한다)
