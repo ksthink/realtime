@@ -114,8 +114,8 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
   const S = 1.05; // 게임 카메라에서 보이도록 실제보다 조금 크게
   const body = part(root, new THREE.CapsuleGeometry(0.018, 0.045, 4, 8).rotateX(Math.PI / 2), n, 1);
   const head = part(root, new THREE.SphereGeometry(0.034, 12, 10), n, 1);
-  const eye = part(root, new THREE.SphereGeometry(0.013, 10, 8), n, 2, { color: "#2f2a36", roughness: 0.35 });
-  const shine = part(root, new THREE.SphereGeometry(0.0045, 6, 5), n, 2, { color: "#ffffff", emissive: "#ffffff", emissiveIntensity: 0.6 });
+  const eye = part(root, new THREE.SphereGeometry(0.0095, 10, 8), n, 2, { color: "#2f2a36", roughness: 0.35 });
+  const shine = part(root, new THREE.SphereGeometry(0.0033, 6, 5), n, 2, { color: "#ffffff", emissive: "#ffffff", emissiveIntensity: 0.6 });
   // 더듬이는 짧고 가늘게, 머리와 같은 색으로 해서 눈에 덜 띄게
   const stalk = part(root, new THREE.CylinderGeometry(0.002, 0.002, 0.045, 4).translate(0, 0.0225, 0), n, 2);
   const knob = part(root, new THREE.SphereGeometry(0.007, 8, 6), n, 2);
@@ -214,8 +214,8 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
         for (const s of [-1, 1]) {
           const k = s < 0 ? 0 : 1;
           // 큰 눈을 얼굴 앞쪽에, 위쪽에 작은 흰 반짝임
-          put(eye, i, k, base, s * 0.0135, 0.0375, 0.0808);
-          put(shine, i, k, base, s * 0.0125, 0.043, 0.093);
+          put(eye, i, k, base, s * 0.0135, 0.0375, 0.084);
+          put(shine, i, k, base, s * 0.013, 0.041, 0.093);
           put(stalk, i, k, base, s * 0.009, 0.058, 0.062, 0.5, 0, -s * 0.35);
           put(knob, i, k, base, s * 0.024, 0.095, 0.082);
           // 오른쪽(+x) 날개는 +flap만큼, 왼쪽은 거울로
@@ -239,7 +239,7 @@ const depthAt = (x: number, z: number) => WATER_Y - terrainY(x, z);
 const fishOk = (x: number, z: number) => { const d = depthAt(x, z); return d > 0.45 && d < 3; };
 
 // 몸통 타원체 반지름과, 몸 겉면 위의 점(방향 → 겉면 + lift)
-const FB = [0.11, 0.1, 0.15] as const;
+const FB = [0.07, 0.095, 0.165] as const; // 옆으로 납작하고 앞뒤로 긴 몸(둥글면 올챙이처럼 보인다)
 const _f = new THREE.Vector3();
 const onFish = (x: number, y: number, z: number, lift: number) => {
   _f.set(x, y, z).normalize();
@@ -262,11 +262,13 @@ export function fishPonds(light: boolean) {
 function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
   const S = 0.65; // 실제 물고기 크기쯤
   const body = part(root, new THREE.SphereGeometry(1, 16, 12), n, 1);
-  const tail = part(root, new THREE.SphereGeometry(1, 14, 10).translate(0, 0, -1), n, 1); // 둥근 부채꼴 꼬리. 앞 끝이 원점(몸 쪽)
+  // 꼬리는 위아래로 갈라진 두 갈래(V자). 갈래마다 앞 끝이 원점(몸 쪽)
+  const tail = part(root, new THREE.SphereGeometry(1, 12, 8).translate(0, 0, -1), n, 2);
   const fin = part(root, new THREE.SphereGeometry(1, 10, 8), n, 1);
-  const eye = part(root, new THREE.SphereGeometry(0.024, 10, 8), n, 2, { color: "#2f2a36", roughness: 0.35 });
-  const shine = part(root, new THREE.SphereGeometry(0.008, 6, 5), n, 2, { color: "#ffffff", emissive: "#ffffff", emissiveIntensity: 0.6 });
-  const blush = part(root, new THREE.SphereGeometry(0.02, 8, 6), n, 2, { color: "#ff9fb2", roughness: 0.9 });
+  const pect = part(root, new THREE.SphereGeometry(1, 8, 6).translate(0, 0, -1), n, 2); // 옆지느러미
+  const eye = part(root, new THREE.SphereGeometry(0.016, 10, 8), n, 2, { color: "#2f2a36", roughness: 0.35 });
+  const shine = part(root, new THREE.SphereGeometry(0.0055, 6, 5), n, 2, { color: "#ffffff", emissive: "#ffffff", emissiveIntensity: 0.6 });
+  const blush = part(root, new THREE.SphereGeometry(0.016, 8, 6), n, 2, { color: "#ff9fb2", roughness: 0.9 });
 
   const list: Fish[] = Array.from({ length: n }, (_, i) => ({ on: false, home: null, p: new THREE.Vector3(), yaw: 0, turn: 0, t: 0, jump: -1, nextJump: 0, pitch: 0, seed: i * 2.1 }));
   let colorsDirty = false;
@@ -278,10 +280,10 @@ function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
     }
     f.p.set(x, 0, z); f.yaw = Math.random() * Math.PI * 2; f.turn = 0; f.jump = -1; f.nextJump = rand(6, 20);
     const h = [0.03, 0.08, 0.13, 0.92, 0.75, 0.55][Math.floor(Math.random() * 6)] + rand(-0.02, 0.02);
-    tint(body, i, pastel(h, 0.75, 0.74)); tint(tail, i, pastel(h + 0.05, 0.7, 0.66)); tint(fin, i, pastel(h + 0.05, 0.7, 0.68));
+    tint(body, i, pastel(h, 0.75, 0.74)); tint(tail, i, pastel(h + 0.05, 0.7, 0.66)); tint(fin, i, pastel(h + 0.05, 0.7, 0.68)); tint(pect, i, pastel(h + 0.05, 0.7, 0.7));
     colorsDirty = true;
   };
-  const base = new THREE.Matrix4(), parts = [body, tail, fin, eye, shine, blush];
+  const base = new THREE.Matrix4(), parts = [body, tail, fin, pect, eye, shine, blush];
   const assign = makeAssigner(fishPonds(env.light), list, spawn, (i) => { for (const p of parts) hide(p, i); });
 
   return {
@@ -326,11 +328,12 @@ function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
         const wag = Math.sin(now * (f.jump >= 0 ? 18 : 9) + f.seed);
         base.compose(_v.set(f.p.x, y, f.p.z), _q.setFromEuler(_e.set(f.pitch, f.yaw + wag * 0.08, 0, "YXZ")), _s.setScalar(S));
         put(body, i, 0, base, 0, 0, 0, 0, 0, 0, FB[0], FB[1], FB[2]);
-        put(tail, i, 0, base, 0, 0, -0.12, 0, wag * 0.55, 0, 0.022, 0.085, 0.07);
-        put(fin, i, 0, base, 0, 0.095, -0.03, -0.5, 0, 0, 0.01, 0.03, 0.055);
+        put(fin, i, 0, base, 0, 0.088, -0.02, -0.55, 0, 0, 0.008, 0.035, 0.06);
         for (const s of [-1, 1]) {
           const k = s < 0 ? 0 : 1;
-          const e = onFish(s * 0.55, 0.3, 0.78, 0.004), h = onFish(s * 0.5, 0.42, 0.78, 0.022), c = onFish(s * 0.82, -0.12, 0.56, 0.002);
+          put(tail, i, k, base, 0, s * 0.012, -0.15, s * 0.6, wag * 0.55, 0, 0.012, 0.03, 0.075); // 위(+)·아래(-) 갈래
+          put(pect, i, k, base, s * 0.06, -0.03, 0.03, 0.3, s * 0.7 + wag * 0.25, 0, 0.006, 0.022, 0.045);
+          const e = onFish(s * 0.45, 0.32, 0.84, 0.003), h = onFish(s * 0.4, 0.42, 0.84, 0.013), c = onFish(s * 0.8, -0.18, 0.56, 0.001);
           put(eye, i, k, base, e.x, e.y, e.z);
           put(shine, i, k, base, h.x, h.y, h.z);
           put(blush, i, k, base, c.x, c.y, c.z, 0, s * 1.0, 0, 1, 0.65, 0.35);
