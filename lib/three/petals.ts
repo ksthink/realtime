@@ -18,7 +18,8 @@ const f = (v: number) => v.toFixed(4);
 
 // 위치 배열을 고치지 않고 시간으로 계산한다. 꽃잎은 월드에 머물고, 플레이어 둘레 상자를 벗어나면 반대편으로 돌아온다
 export function makePetals() {
-  const uniforms = { uTime: { value: 0 }, uPx: { value: 1000 }, uCenter: { value: new THREE.Vector3() } };
+  // uTint: 지금 하늘빛(시간대)으로 꽃잎 색을 물들인다. 한낮엔 흰색(1, 1, 1)이라 예전 색 그대로다
+  const uniforms = { uTime: { value: 0 }, uPx: { value: 1000 }, uCenter: { value: new THREE.Vector3() }, uTint: { value: new THREE.Color(1, 1, 1) } };
   const r = rng(97);
   const seeds = new Float32Array(COUNT * 4), colors = new Float32Array(COUNT * 3);
   for (let i = 0; i < COUNT; i++) {
@@ -41,6 +42,7 @@ export function makePetals() {
         uniform float uTime;
         uniform float uPx;
         uniform vec3 uCenter;
+        uniform vec3 uTint;
         attribute vec4 aSeed;
         attribute vec3 aColor;
         varying vec3 vColor;
@@ -52,7 +54,7 @@ export function makePetals() {
           float period = mix(${f(PERIOD_MIN)}, ${f(PERIOD_MAX)}, fract(phase * 7.13));
           float raw = uTime / period + phase;
           float life = fract(raw) / ${f(DUTY)};
-          vColor = aColor; vRot = vec2(1.0, 0.0); vWidth = 0.2; vA = 0.0;
+          vColor = aColor * uTint; vRot = vec2(1.0, 0.0); vWidth = 0.2; vA = 0.0;
           // 쉬는 동안은 화면 밖으로 보낸다
           if (life > 1.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 1.0; return; }
           float sec = life * period * ${f(DUTY)};
@@ -98,8 +100,10 @@ export function makePetals() {
   let placed = false;
   return {
     points,
-    update(dt: number, center: THREE.Vector3) {
+    // tint: 시간대 빛깔(한낮 = 흰색). 넘기지 않으면 그대로 둔다
+    update(dt: number, center: THREE.Vector3, tint?: THREE.Color) {
       uniforms.uTime.value += dt;
+      if (tint) uniforms.uTint.value.copy(tint);
       const c = uniforms.uCenter.value;
       // 오르막에서 꽃잎이 플레이어와 함께 출렁이지 않도록 높이만 천천히 따라간다
       c.set(center.x, placed ? c.y + (center.y - c.y) * Math.min(1, dt * 0.8) : center.y, center.z);

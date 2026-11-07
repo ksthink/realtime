@@ -15,9 +15,9 @@ import { makeFireflies } from "./three/fireflies";
 import { lanternLit, tickLanterns } from "./three/lantern";
 import { buildWorld, groundAt } from "./three/world";
 import { seeThrough } from "./three/bigtree";
-import { makeDaytime } from "./three/daytime";
+import { makeDaytime, NOON_LIGHT } from "./three/daytime";
 import { updateFogTint } from "./three/fogtint";
-import { fitSunShadow } from "./three/sunshadow";
+import { fitSunShadow, shadowLook } from "./three/sunshadow";
 import { makeSky } from "./three/sky";
 import { waterMood } from "./three/water";
 
@@ -587,13 +587,22 @@ export class Game {
       this.lanternLight.intensity = k * LANTERN_LIGHT;
       if (k > 0) this.lanternLight.position.copy(this.lanternAt);
     }
-    this.petals.update(dt, p);
+    this.petals.update(dt, p, this.petalTint()); // 꽃잎도 지금 하늘빛에 물든다
     this.splash.update(dt);
     this.updateDaytime();
     fitSunShadow(this.sun, p, this.daytime.lightDir, this.camera); // 해가 낮으면 긴 그림자를 담도록 그림자 상자를 늘린다
+    shadowLook(this.sun, this.daytime.lightDir, this.daytime.night); // 그림자 진하기: 낮 0.7, 해가 낮을 때·밤엔 더 옅게
   }
 
   // 하늘·안개·빛·먼 산·물빛을 지금 하늘에 맞춘다. 한낮(해 높이 24° 위)은 예전 값 그대로다
+  // 꽃잎은 빛을 받지 않는 재질이라, 하늘빛·햇빛을 한낮과 견줘 색을 곱해 준다(한낮 = 흰색)
+  private petalTintC = new THREE.Color();
+  private petalTint() {
+    const d = this.daytime, n = NOON_LIGHT, c = this.petalTintC;
+    const ch = (sky: number, sun: number, nSky: number, nSun: number) => (sky * d.hemiI * 0.6 + sun * d.lightI * 0.4) / (nSky * n.skyI * 0.6 + nSun * n.sunI * 0.4);
+    return c.setRGB(ch(d.hemiSky.r, d.light.r, n.sky.r, n.sun.r), ch(d.hemiSky.g, d.light.g, n.sky.g, n.sun.g), ch(d.hemiSky.b, d.light.b, n.sky.b, n.sun.b));
+  }
+
   private updateDaytime() {
     const d = this.daytime.update(), scene = this.scene;
     (scene.background as THREE.Color).copy(d.horizon);

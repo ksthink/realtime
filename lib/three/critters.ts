@@ -400,13 +400,13 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
   const belly = part(root, ell(0.034, 0.03, 0.044), n, 1);
   const head = part(root, new THREE.SphereGeometry(0.034, 12, 10), n, 1);
   const beak = part(root, new THREE.ConeGeometry(0.008, 0.018, 6).translate(0, 0.009, 0).rotateX(Math.PI / 2), n, 1, { color: "#e3a25e" });
-  const eye = part(root, new THREE.SphereGeometry(0.0065, 8, 6), n, 2, { color: "#2f2a36", roughness: 0.35 });
-  const shine = part(root, new THREE.SphereGeometry(0.0022, 6, 4), n, 2, { color: "#ffffff", emissive: "#ffffff", emissiveIntensity: 0.6 });
+  // 눈: 캐릭터처럼 반짝임 없는 작고 까만 점(무광)
+  const eye = part(root, new THREE.SphereGeometry(0.0055, 8, 6), n, 2, { color: "#3a2f3f", roughness: 0.6 });
   const blush = part(root, new THREE.SphereGeometry(0.008, 8, 6), n, 2, { color: "#f4a6a6", roughness: 0.9 });
   const wing = part(root, new THREE.SphereGeometry(1, 14, 8).translate(1, 0, 0), n, 2); // 경첩이 x=0
   const tail = part(root, new THREE.SphereGeometry(1, 8, 6).translate(0, 0, -1), n, 1); // 경첩이 z=0
   const leg = part(root, new THREE.CylinderGeometry(0.0025, 0.0025, 0.02, 4).translate(0, -0.01, 0), n, 2, { color: "#d49a6a" });
-  const parts = [body, belly, head, beak, eye, shine, blush, wing, tail, leg];
+  const parts = [body, belly, head, beak, eye, blush, wing, tail, leg];
   for (const p of [body, belly, head, beak, blush, wing, tail, leg]) soften(p);
 
   // 앉을 자리 찾기: 8m 칸으로 나눠 둔다
@@ -587,8 +587,8 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
         const flap = 0.25 + Math.sin(b.phase) * 0.95; // 위로 1.2, 아래로 0.7
         for (const s of [-1, 1]) {
           const k = s < 0 ? 0 : 1;
-          if (asleep) { put(eye, i, k, hm, s * 0.0194, 0.02, 0.043, 0, 0, 0, 1, 0.18, 1); put(shine, i, k, hm, 0, 0, 0, 0, 0, 0, 0, 0, 0); } // 감은 눈: 납작한 선
-          else { put(eye, i, k, hm, s * 0.0194, 0.022, 0.043); put(shine, i, k, hm, s * 0.0215, 0.0253, 0.0479); }
+          if (asleep) put(eye, i, k, hm, s * 0.0194, 0.02, 0.043, 0, 0, 0, 1, 0.18, 1); // 감은 눈: 납작한 선
+          else put(eye, i, k, hm, s * 0.0194, 0.022, 0.043);
           put(blush, i, k, hm, s * 0.0255, 0.0075, 0.0364, 0, s * 0.9, 0, 1, 0.7, 0.35);
           // 날개: 펴면 옆으로 뻗어 위아래로 치고(fold 0), 접으면 몸 옆에 세워 뒤로 붙인다(fold 1)
           const w = b.fold, rz = b.fly ? s * flap * (1 - w) - s * 0.15 * w : -s * 0.15;

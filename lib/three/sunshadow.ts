@@ -8,7 +8,7 @@ const R = 26; // 상자 가운데에서 이만큼(m) 둘레의 땅이 그림자�
 const AHEAD = 6; // 상자 가운데를 카메라가 보는 쪽으로 이만큼 민다(뒤쪽 땅은 화면에 덜 나온다)
 const H_UP = 10, H_DOWN = 8; // 그림자를 받는 높이 범위: 나무 꼭대기까지, 동산 위에서 내려다본 아래 땅까지
 const H_CAST = 13; // 그림자를 드리우는 것의 가장 높은 곳(큰 나무)
-const REACH_MAX = 70; // 해 쪽으로 이만큼(m)까지 그림자를 드리우는 것을 담는다
+const REACH_MAX = 70; // 해 쪽으로 이만큼(m)까지 그림자를 드리우는 것을 담는다(빛은 15° 아래로 내려오지 않아 실제로는 50m 남짓까지만 쓴다)
 const BIAS_M = 0.048; // 깊이 치우침(m). 상자 깊이가 바뀌어도 같은 거리로 둔다
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -45,4 +45,14 @@ export function fitSunShadow(light: THREE.DirectionalLight, at: THREE.Vector3, d
   light.position.copy(_c).addScaledVector(dir, dist);
   light.target.position.copy(_c);
   light.target.updateMatrixWorld();
+}
+
+// 그림자 진하기와 가장자리: 그림자를 아주 까맣게 두지 않고 옅게 둬 겹친 나무 그림자도 지저분하지 않게 한다.
+// 낮 0.7, 해가 낮아 그림자가 길 때 0.6, 밤(달)은 0.45. night는 0(낮)~1(밤)
+const SIN20 = Math.sin((20 * Math.PI) / 180), SIN40 = Math.sin((40 * Math.PI) / 180);
+export function shadowLook(light: THREE.DirectionalLight, dir: THREE.Vector3, night: number) {
+  const t = Math.min(Math.max((dir.y - SIN20) / (SIN40 - SIN20), 0), 1), high = t * t * (3 - 2 * t);
+  const day = 0.6 + 0.1 * high;
+  light.shadow.intensity = day + (0.45 - day) * night;
+  light.shadow.radius = 2.5; // PCFShadowMap의 표본 5개를 넓게 흩뿌릴 뿐이라 더 들지 않는다
 }
