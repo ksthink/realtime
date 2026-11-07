@@ -16,6 +16,7 @@ export type CritterEnv = {
   flowers: { x: number; z: number; top: number }[]; // 꽃송이 자리와 윗면 높이
   splash: (x: number, z: number, yaw: number) => void;
   light: boolean; // 휴대폰이면 수를 줄인다
+  feeding: () => { x: number; z: number }[]; // 나무지기가 지금 먹이를 주는 물고기 터 가운데들
 };
 
 // ── 부위: 지오메트리 하나 = InstancedMesh 하나. 생물마다 per개씩 쓴다 ──
@@ -244,13 +245,13 @@ const onFish = (x: number, y: number, z: number, lift: number) => {
   return _f.multiplyScalar(t).addScaledVector(n, lift).clone();
 };
 
-// 물고기 터: 깊이 0.6~2.5m인 물에서 시드로 고르고 서로 12m 넘게 떨어뜨린다. 한 곳에 1~2마리
+// 물고기 터: 깊이 0.6~2.5m인 물에서 시드로 고르고 서로 12m 넘게 떨어뜨린다. 한 곳에 2~3마리(휴대폰 1~2마리). 먹이를 주면 무리 지어 모인다
 const PONDS = 26;
-function fishPonds(light: boolean) {
+export function fishPonds(light: boolean) {
   const r = rng(7702), homes: Home[] = [];
   for (let k = 0; k < 30000 && homes.length < PONDS; k++) {
-    const a = r() * Math.PI * 2, d = Math.sqrt(r()) * (WORLD - 4), x = Math.cos(a) * d, z = Math.sin(a) * d, depth = depthAt(x, z), n = 1 + Math.floor(r() * 2);
-    if (depth > 0.6 && depth < 2.5 && homes.every((h) => Math.hypot(h.x - x, h.z - z) > 12)) homes.push({ x, z, r: 5, n: light ? 1 : n, members: [] });
+    const a = r() * Math.PI * 2, d = Math.sqrt(r()) * (WORLD - 4), x = Math.cos(a) * d, z = Math.sin(a) * d, depth = depthAt(x, z), n = 2 + Math.floor(r() * 2);
+    if (depth > 0.6 && depth < 2.5 && homes.every((h) => Math.hypot(h.x - x, h.z - z) > 12)) homes.push({ x, z, r: 5, n: light ? n - 1 : n, members: [] });
   }
   return homes;
 }
@@ -283,6 +284,7 @@ function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
   return {
     update(dt: number, player: THREE.Vector3, now: number) {
       assign(dt, player);
+      const feed = env.feeding();
       list.forEach((f, i) => {
         if (!f.on) return;
         const home = f.home!;
@@ -295,15 +297,22 @@ function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
           f.p.x += Math.sin(f.yaw) * 1.4 * dt; f.p.z += Math.cos(f.yaw) * 1.4 * dt;
           y = WATER_Y - 0.15 + 0.75 * Math.sin(Math.PI * u);
           f.pitch = -(0.5 - u) * 2.2;
-          if (u >= 1) { f.jump = -1; f.pitch = 0; env.splash(f.p.x, f.p.z, f.yaw); f.nextJump = rand(8, 25); }
+          if (u >= 1) { f.jump = -1; f.pitch = 0; env.splash(f.p.x, f.p.z, f.yaw); f.nextJump = feed.some((p) => Math.hypot(p.x - f.p.x, p.z - f.p.z) < 10) ? rand(2, 6) : rand(8, 25); }
         } else {
           // 헤엄: 가끔 방향을 바꾸고, 앞이 얕거나 물 밖이면 돌아선다
+          // 근처(10m)에서 먹이를 주면 그리로 모여 둘레를 맴돌고, 자주 뛰어오른다
+          const food = feed.find((p) => Math.hypot(p.x - f.p.x, p.z - f.p.z) < 10);
           if (Math.random() < dt * 0.4) f.turn = rand(-0.9, 0.9);
           const ax = f.p.x + Math.sin(f.yaw) * 1.2, az = f.p.z + Math.cos(f.yaw) * 1.2;
           if (!fishOk(ax, az)) f.turn = 2.2 * Math.sign(f.turn || 1);
-          else if (Math.hypot(f.p.x - home.x, f.p.z - home.z) > home.r) f.turn = 1.5 * Math.sign(angleTo(f.yaw, Math.atan2(home.x - f.p.x, home.z - f.p.z)) || 1); // 제 터로 돌아온다
+          else if (food) {
+            const d = Math.hypot(food.x - f.p.x, food.z - f.p.z);
+            const want = Math.atan2(food.x - f.p.x, food.z - f.p.z) + (d < 0.9 ? 1.4 : 0); // 가까우면 옆으로 돌아 맴돈다
+            f.turn = THREE.MathUtils.clamp(angleTo(f.yaw, want) * 2.5, -2.5, 2.5);
+            if (f.nextJump > 6) f.nextJump = rand(1.5, 5);
+          } else if (Math.hypot(f.p.x - home.x, f.p.z - home.z) > home.r) f.turn = 1.5 * Math.sign(angleTo(f.yaw, Math.atan2(home.x - f.p.x, home.z - f.p.z)) || 1); // 제 터로 돌아온다
           f.yaw += f.turn * dt;
-          const sp = FISH_SPEED * (0.8 + 0.3 * Math.sin(now * 1.3 + f.seed));
+          const sp = FISH_SPEED * (food ? 1.6 : 0.8 + 0.3 * Math.sin(now * 1.3 + f.seed));
           const nx = f.p.x + Math.sin(f.yaw) * sp * dt, nz = f.p.z + Math.cos(f.yaw) * sp * dt;
           if (fishOk(nx, nz)) { f.p.x = nx; f.p.z = nz; }
           y = Math.max(terrainY(f.p.x, f.p.z) + 0.15, WATER_Y - 0.3) + Math.sin(now * 1.1 + f.seed) * 0.04;
@@ -336,7 +345,7 @@ function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
 export function makeCritters(root: THREE.Object3D, env: CritterEnv) {
   // 한꺼번에 움직이는 최대 수(풀). 가까운 사는 곳부터 채운다
   const flies = makeButterflies(root, env.light ? 8 : 14, env);
-  const fish = makeFish(root, env.light ? 3 : 6, env);
+  const fish = makeFish(root, env.light ? 4 : 8, env);
   let now = 0;
   return {
     update(dt: number, player: THREE.Vector3) {
