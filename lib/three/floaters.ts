@@ -2,12 +2,12 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { WATER_Y, WORLD, canWade, rng, terrainY } from "../terrain";
 
-// ── 수면에 떠 있는 것: 개구리밥, 연잎, 연꽃 ──
+// ── 수면에 떠 있는 것: 연잎, 연꽃 ──
 // 돌려준 메시는 world.ts가 꽃처럼 가까운 칸만 그린다(그림자 없음)
 // 움직임은 정점 셰이더에서만: 제자리에서 작은 원을 그리며 떠돌고(DRIFT m), 천천히 돌고(TURN 라디안), 살짝 오르내린다(BOB m)
 const DRIFT = 0.12, TURN = 0.25, BOB = 0.003;
 const TILE = 24; // 격자 칸(m). 칸마다 메시를 나눠 가까운 칸만 그린다
-const PAD_SITES = 14, WEED_SITES = 10;
+const PAD_SITES = 14;
 
 // 위상: 떠돌기는 이웃끼리 거의 같게(물살이 함께 미는 것처럼) 해 연잎끼리 겹치지 않게 하고, 돌기·오르내림은 저마다 다르게.
 // 연꽃은 연잎 한가운데(같은 xz)에 앉으므로 연잎과 똑같이 움직인다
@@ -43,7 +43,7 @@ function withCenter<M extends THREE.Material>(mat: M) {
   mat.onBeforeCompile = (s) => {
     s.fragmentShader = s.fragmentShader.replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\nnormal = normalize(vNormal);");
     s.vertexShader = "attribute float aCenter;\nvarying float vCenter;\n" + s.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvCenter = aCenter;");
-    s.fragmentShader = "varying float vCenter;\n" + s.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.84, 0.38), vCenter);");
+    s.fragmentShader = "varying float vCenter;\n" + s.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95, 0.86, 0.58), vCenter);");
   };
   return mat;
 }
@@ -72,21 +72,6 @@ function lotusGeometry() {
   for (let i = 0; i < n.count; i++) n.setXYZ(i, 0, 1, 0);
   return g;
 }
-// 개구리밥 한 무더기: 작은 동그라미 잎 수십 장을 몇 덩어리로 뭉쳐 하나로 합친다. 반지름 1쯤.
-// 잎마다 밝기를 조금 달리하고(정점 색), 겹쳐도 깜빡이지 않게 높이를 아주 조금씩 다르게 둔다
-function duckweedGeometry() {
-  const r = rng(7301), parts: THREE.BufferGeometry[] = [];
-  const clumps = [...Array(4)].map(() => [(r() - 0.5) * 0.9, (r() - 0.5) * 0.9, 0.35 + r() * 0.3]);
-  for (let i = 0; i < 120; i++) {
-    const [cx, cz, cr] = clumps[i % clumps.length], a = r() * Math.PI * 2, d = Math.sqrt(r()) * cr;
-    const s = 0.04 + r() * 0.03, light = 0.9 + r() * 0.2;
-    const leaf = new THREE.CircleGeometry(1, 5).rotateX(-Math.PI / 2).scale(s, 1, s * (0.8 + r() * 0.2)).rotateY(r() * 6).translate(cx + Math.cos(a) * d, i * 0.00004, cz + Math.sin(a) * d).deleteAttribute("uv");
-    leaf.setAttribute("color", new THREE.Float32BufferAttribute(new Array(leaf.attributes.position.count * 3).fill(light), 3));
-    parts.push(leaf);
-  }
-  return mergeGeometries(parts)!;
-}
-
 // 떠 있을 자리: 가운데와 둘레 rad m가 모두 잔잔한 물(깊이 0.3~2.2m)이고 걸어 들어갈 수 있는 얕은 물이 아니다.
 // 돌다리와 둑은 수면 위로 솟아 있으므로 걸러진다
 const depth = (x: number, z: number) => WATER_Y - terrainY(x, z);
@@ -119,7 +104,7 @@ function cells(root: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Mater
 }
 
 export function buildFloaters(root: THREE.Object3D, time: { value: number }): THREE.InstancedMesh[] {
-  const r = rng(9157), pads: Inst[] = [], lotus: Inst[] = [], weeds: Inst[] = [];
+  const r = rng(9157), pads: Inst[] = [], lotus: Inst[] = [];
   const at = (x: number, y: number, z: number, yaw: number, s: number) =>
     new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), new THREE.Vector3(s, s, s));
   const sites: { x: number; z: number }[] = [];
@@ -133,12 +118,7 @@ export function buildFloaters(root: THREE.Object3D, time: { value: number }): TH
     }
     return out;
   };
-  const weed = (x: number, z: number) => {
-    const s = 0.35 + r() * 0.35, c = new THREE.Color().setHSL(0.25 + r() * 0.04, 0.6 + r() * 0.15, 0.47 + r() * 0.06);
-    weeds.push({ x, z, m: at(x, WATER_Y + 0.01, z, r() * Math.PI * 2, s), c });
-  };
-
-  // 연잎 무리: 3~8장이 서로 겹치지 않게 모이고, 큰 잎 몇 장에 연꽃이 핀다. 둘레에 개구리밥도 조금
+  // 연잎 무리: 3~8장이 서로 겹치지 않게 모이고, 큰 잎 몇 장에 연꽃이 핀다
   for (const site of pick(PAD_SITES, 1.8, 2.2, 16)) {
     const n = 3 + Math.floor(r() * 6), mine: { x: number; z: number; s: number }[] = [];
     const hue = 0.27 + r() * 0.05;
@@ -155,25 +135,13 @@ export function buildFloaters(root: THREE.Object3D, time: { value: number }): TH
     for (const p of big.slice(0, blooms)) {
       if (p.s < 0.17) continue;
       const pink = r() < 0.65;
-      const c = new THREE.Color().setHSL(pink ? 0.95 + r() * 0.03 : 0.1, pink ? 0.85 : 0.6, pink ? 0.76 + r() * 0.04 : 0.93);
+      const c = new THREE.Color().setHSL(pink ? 0.96 + r() * 0.02 : 0.1, pink ? 0.42 : 0.3, pink ? 0.84 + r() * 0.03 : 0.92); // 물빛에 묻히는 옅은 분홍·미색
       lotus.push({ x: p.x, z: p.z, m: at(p.x, WATER_Y + 0.03, p.z, r() * Math.PI * 2, 1.3 + r() * 0.3), c });
-    }
-    for (let k = 0, w = 1 + Math.floor(r() * 3); k < w; k++) {
-      const a = r() * Math.PI * 2, d = 0.8 + r() * 1.4, x = site.x + Math.cos(a) * d, z = site.z + Math.sin(a) * d;
-      if (calm(x, z, 0.9)) weed(x, z);
-    }
-  }
-  // 개구리밥 터: 물가 가까운 잔잔한 얕은 물(깊이 0.3~1.3m)에 무더기 2~5개
-  for (const site of pick(WEED_SITES, 0.7, 1.3, 12)) {
-    for (let k = 0, w = 2 + Math.floor(r() * 4); k < w; k++) {
-      const a = r() * Math.PI * 2, d = k ? 0.5 + r() * 1.2 : 0, x = site.x + Math.cos(a) * d, z = site.z + Math.sin(a) * d;
-      if (calm(x, z, 0.9)) weed(x, z);
     }
   }
 
   const mat = (extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ roughness: 0.9, side: THREE.DoubleSide, ...extra });
   return [
-    ...cells(root, duckweedGeometry(), floating(mat({ vertexColors: true }), time, "weed"), weeds),
     ...cells(root, padGeometry(), floating(mat(), time, "pad"), pads),
     ...cells(root, lotusGeometry(), floating(withCenter(mat()), time, "lotus"), lotus),
   ];

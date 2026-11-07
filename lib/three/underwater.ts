@@ -109,13 +109,13 @@ export function buildUnderwater(root: THREE.Object3D, time: { value: number }): 
       else { const h = Math.min(0.45 + r() * 0.55, p.d * 0.85); put(ribbons, p.x, p.y - 0.04, p.z, h * 0.9, h, h * 0.9, col, 0.25); }
     }
   }
-  // 조약돌: 납작하고 둥근 돌이 1~4개씩 모여 있다. 얕은 물가에도 드문드문, 무리 자리는 얼룩진 무늬를 따른다
-  for (const c of spots(420, 9203, 0.03, 1.8)) {
+  // 조약돌: 걸어 들어가는 얕은 물가에는 두지 않고, 물속 몇 군데에 12~28개씩 소복이 모아 둔다(가운데가 빽빽하다)
+  for (const c of spots(60, 9203, 0.45, 1.6)) {
     if (vnoise(c.x * 0.15 + 4.1, c.z * 0.15 + 2.3) < 0.35) continue;
-    const n = 1 + Math.floor(r() * r() * 4), light = 0.58 + r() * 0.16, hue = r() < 0.5 ? 0.09 + r() * 0.04 : 0.55 + r() * 0.08;
+    const n = 12 + Math.floor(r() * 17), light = 0.58 + r() * 0.16, hue = r() < 0.5 ? 0.09 + r() * 0.04 : 0.55 + r() * 0.08, spread = 0.5 + r() * 0.4;
     for (let i = 0; i < n; i++) {
-      const p = i ? near(c, 0.45) : c, s = 0.06 + r() * r() * 0.12;
-      if (p.d < 0.02) continue;
+      const p = i ? near(c, spread) : c, s = 0.05 + r() * r() * 0.1;
+      if (p.d < 0.35) continue;
       const col = new THREE.Color().setHSL(hue, 0.06 + r() * 0.06, light + (r() - 0.5) * 0.08);
       put(pebbles, p.x, p.y + s * 0.15, p.z, s * (1 + r() * 0.4), s * (0.45 + r() * 0.2), s, col, 0.3);
     }

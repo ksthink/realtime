@@ -593,7 +593,7 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
 }
 
 // ── 피라미떼 ──
-// 손가락 마디만 한 은빛 물고기 수십 마리가 떼 지어 수면 바로 아래를 헤엄친다. 앞이 +z.
+// 손가락 마디만 한 은빛 물고기 수십 마리가 떼 지어 수면 바로 밑을 헤엄친다(물에 가려지지 않게 수면에 붙여 그린다). 앞이 +z.
 // CPU는 떼 가운데의 길 찾기만 하고(떼마다 유니폼 몇 개), 한 마리 한 마리의 자리·흔들림·꼬리 살랑임은 버텍스 셰이더가 정한다.
 // 풀 전체가 InstancedMesh 하나(그리기 호출 1번)이고, 마리마다 하는 CPU 일은 없다. 모양은 가는 마름모 둘(삼각형 4개)뿐
 type School = Dweller & {
@@ -626,17 +626,20 @@ function makeMinnows(root: THREE.Object3D, nSchools: number, env: CritterEnv) {
   geo.setAttribute("normal", new THREE.Float32BufferAttribute([...Array(6).fill([0, 1, 0]), ...Array(6).fill([1, 0, 0])].flat(), 3));
   // 등(위에서 보이는 판)은 진하게, 옆구리(세운 판)는 은빛으로 밝게: 물 위에서 보면 진한 실루엣이라 물빛에 묻히지 않는다
   geo.setAttribute("color", new THREE.Float32BufferAttribute([...Array(6).fill([0.5, 0.52, 0.58]), ...Array(6).fill([1.08, 1.08, 1.1])].flat(), 3));
-  // 마리마다 고정값: 떼 안의 제 자리(ox, oz), 수면 아래 깊이, 위상 / 떼 번호, 떼 안 순번(0~1)
+  // 마리마다 고정값: 떼 안의 제 자리(ox, oz), 높이 차(0~1), 위상 / 떼 번호, 떼 안 순번(0~1)
   const off = new Float32Array(N * 4), meta = new Float32Array(N * 2);
   for (let i = 0; i < N; i++) {
     const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()); // 앞뒤로 조금 긴 타원(0.5×0.8m) 안에 고르게
-    off.set([Math.cos(a) * d * 0.5, Math.sin(a) * d * 0.8, rand(0.08, 0.3), Math.random() * 100], i * 4);
+    off.set([Math.cos(a) * d * 0.5, Math.sin(a) * d * 0.8, Math.random(), Math.random() * 100], i * 4);
     meta.set([Math.floor(i / PER), (i % PER) / PER], i * 2);
   }
   geo.setAttribute("aOff", new THREE.InstancedBufferAttribute(off, 4));
   geo.setAttribute("aMeta", new THREE.InstancedBufferAttribute(meta, 2));
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.45, side: THREE.DoubleSide, vertexColors: true });
+  // 물은 반투명이고 바닥이 깊을수록 짙어져, 물 밑에 두면 깊은 곳에서 가려진다.
+  // 그래서 수면에 붙여 물 다음에 그리고(renderOrder), 조금 비치게 해 물속에 있는 것처럼 보이게 한다
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.45, side: THREE.DoubleSide, vertexColors: true, transparent: true, opacity: 0.8, depthWrite: false });
   const mesh = new THREE.InstancedMesh(geo, mat, N);
+  mesh.renderOrder = 1;
   mesh.frustumCulled = false;
   for (let i = 0; i < N; i++) mesh.setColorAt(i, WHITE); // 자리 행렬은 단위행렬 그대로 둔다
   root.add(mesh);
@@ -664,7 +667,7 @@ function makeMinnows(root: THREE.Object3D, nSchools: number, env: CritterEnv) {
         transformed.x += wag * 0.007 * C.y * bend * bend; // 꼬리 쪽을 옆으로 휜다
         transformed *= on;
         transformed = vec3(transformed.x * fc + transformed.z * fs, transformed.y, -transformed.x * fs + transformed.z * fc)
-          + vec3(fp.x, ${WATER_Y.toFixed(3)} - aOff.z + sin(uTime * 0.9 + q) * 0.03, fp.y);`);
+          + vec3(fp.x, ${(WATER_Y + 0.008).toFixed(3)} + aOff.z * 0.004, fp.y);`); // 수면 바로 위(마리마다 높이를 조금 달리해 겹쳐도 깜빡이지 않게)
     // 새처럼 명암을 줄인다
     sh.fragmentShader = sh.fragmentShader.replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, vec3(0.0, 0.0, 1.0), 0.65));");
   };
