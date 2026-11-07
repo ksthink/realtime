@@ -19,7 +19,7 @@ import { makeDaytime, NOON_LIGHT } from "./three/daytime";
 import { updateFogTint } from "./three/fogtint";
 import { fitSunShadow, shadowLook } from "./three/sunshadow";
 import { makeSky } from "./three/sky";
-import { waterMood } from "./three/water";
+import { waterGlare, waterMood } from "./three/water";
 
 // 소원을 빌 수 있게 된 순간(ready)과 최대 층에 닿은 순간(max)에 한 번씩 묻는다
 export type WishPrompt = "ready" | "max";
@@ -612,6 +612,8 @@ export class Game {
     this.sun.color.copy(d.light); this.sun.intensity = d.lightI;
     this.skyline.tint(d.horizon, d.mountain);
     waterMood.color.value.copy(d.water); waterMood.k.value = d.waterK;
+    // 해가 30°보다 낮아질수록(8°에서 가장) 물 반사를 부드럽게. 밤에도 그대로 거칠게 둔다
+    { const t = THREE.MathUtils.clamp((d.sunAlt - 8) / 22, 0, 1); waterGlare.value = 1 - t * t * (3 - 2 * t); }
     updateFogTint(d);
     this.sky.update(this.camera, d, this.starPx);
   }
