@@ -1,14 +1,15 @@
 import * as THREE from "three";
-import { WATER_Y, terrainY } from "../terrain";
+import { WATER_Y, WORLD, rng, terrainY } from "../terrain";
 import { WIND_DIR } from "./petals";
 
 // ── 작은 동물들: 나비와 물고기 ──
-// 배경 생물이라 접속자끼리 맞추지 않는다. 내 캐릭터 둘레(RANGE)에서만 생기고, 멀어지면 다시 가까이에서 생긴다.
+// 사는 곳(꽃밭·물웅덩이)은 세계 곳곳에 시드로 정해 두어 모든 접속자에게 같다. 동물이 많은 곳과 없는 곳이 생긴다.
+// 실제로 움직이는 건 내 캐릭터 가까이(ACTIVE) 있는 사는 곳의 동물뿐이고, 움직임은 접속자끼리 맞추지 않는다.
 // 부위마다 InstancedMesh 하나로 그려 그리기 호출은 부위 수만큼이다. 모양은 단순하게, 대신 귀엽게:
 // 큰 머리·큰 눈과 반짝임, 볼 홍조, 파스텔색, 통통 튀는 움직임
 
-const RANGE = 30; // 이 반경 안에서 생긴다(m)
-const FAR = 40; // 이보다 멀어지면 가까이로 옮긴다(m)
+const ACTIVE = 35; // 사는 곳이 이 거리 안이면 동물이 나타나 움직인다(m)
+const LEAVE = ACTIVE + 8; // 이보다 멀어지면 사라진다. 경계에서 깜빡이지 않게 조금 넉넉히
 const FLY_SPEED = 1.1, FISH_SPEED = 0.6;
 
 export type CritterEnv = {
@@ -43,6 +44,36 @@ const pastel = (h: number, s = 0.6, l = 0.8) => new THREE.Color().setHSL(((h % 1
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const angleTo = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
+// ── 사는 곳 ──
+// x, z, 반경 r, 사는 수 n. members는 지금 그곳에 나타나 있는 동물 번호
+type Home = { x: number; z: number; r: number; n: number; members: number[] };
+type Dweller = { on: boolean; home: Home | null };
+// 0.5초마다: 멀어진 사는 곳의 동물은 거두고, 가까운 사는 곳부터 빈 동물을 채운다(풀 크기가 상한)
+function makeAssigner<T extends Dweller>(homes: Home[], list: T[], spawn: (c: T, i: number, h: Home) => void, hide: (i: number) => void) {
+  let wait = 0;
+  return (dt: number, player: THREE.Vector3) => {
+    if ((wait -= dt) > 0) return;
+    wait = 0.5;
+    const dist = (h: Home) => Math.hypot(h.x - player.x, h.z - player.z);
+    for (const h of homes) {
+      if (!h.members.length || dist(h) < LEAVE) continue;
+      for (const i of h.members) { list[i].on = false; list[i].home = null; hide(i); }
+      h.members = [];
+    }
+    const near = homes.filter((h) => h.members.length < h.n && dist(h) < ACTIVE).sort((a, b) => dist(a) - dist(b));
+    let free = 0;
+    for (const h of near) {
+      while (h.members.length < h.n) {
+        while (free < list.length && list[free].on) free++;
+        if (free >= list.length) return;
+        list[free].on = true; list[free].home = h;
+        h.members.push(free);
+        spawn(list[free], free, h);
+      }
+    }
+  };
+}
+
 // ── 나비 ──
 // 앞이 +z, 위가 +y. 날개는 몸통 축(z)을 경첩으로 위아래로 친다
 function wingGeometry() {
@@ -57,12 +88,23 @@ function wingGeometry() {
   return g;
 }
 
-type Butterfly = {
-  on: boolean; p: THREE.Vector3; yaw: number; bank: number; rest: boolean; t: number; flap: number;
+type Butterfly = Dweller & {
+  p: THREE.Vector3; yaw: number; bank: number; rest: boolean; t: number; flap: number;
   target: { x: number; y: number; z: number } | null; seed: number;
   flee: number; // 남은 달아나기 시간(초). 0보다 크면 캐릭터 반대쪽으로 높이 날아간다
 };
 const FLEE_NEAR = 2.5; // 캐릭터가 이만큼 다가오면 달아난다(m)
+
+// 꽃밭: 꽃 자리 중에서 시드로 고르고 서로 14m 넘게 떨어뜨린다. 한 곳에 2~3마리(휴대폰은 1~2마리)
+const FIELDS = 32;
+function flowerFields(env: CritterEnv) {
+  const r = rng(7701), homes: Home[] = [];
+  for (let k = 0; k < 4000 && homes.length < FIELDS && env.flowers.length; k++) {
+    const f = env.flowers[Math.floor(r() * env.flowers.length)], n = 2 + Math.floor(r() * 2);
+    if (homes.every((h) => Math.hypot(h.x - f.x, h.z - f.z) > 14)) homes.push({ x: f.x, z: f.z, r: 6, n: env.light ? Math.ceil(n / 2) : n, members: [] });
+  }
+  return homes;
+}
 
 function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
   const S = 1.05; // 게임 카메라에서 보이도록 실제보다 조금 크게
@@ -97,12 +139,11 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
     return null;
   };
 
-  const list: Butterfly[] = Array.from({ length: n }, (_, i) => ({ on: false, p: new THREE.Vector3(), yaw: 0, bank: 0, rest: false, t: 0, flap: 0, target: null, seed: i * 1.37, flee: 0 }));
-  const spawn = (b: Butterfly, i: number, px: number, pz: number) => {
-    const a = Math.random() * Math.PI * 2, d = rand(6, RANGE);
-    const f = flowerNear(px + Math.cos(a) * d, pz + Math.sin(a) * d, 8);
-    if (!f) return;
-    b.on = true; b.rest = false; b.target = f; b.t = 0; b.flee = 0;
+  const list: Butterfly[] = Array.from({ length: n }, (_, i) => ({ on: false, home: null, p: new THREE.Vector3(), yaw: 0, bank: 0, rest: false, t: 0, flap: 0, target: null, seed: i * 1.37, flee: 0 }));
+  const homes = flowerFields(env);
+  const spawn = (b: Butterfly, i: number, home: Home) => {
+    const f = flowerNear(home.x, home.z, home.r) ?? { x: home.x, y: terrainY(home.x, home.z), z: home.z };
+    b.rest = false; b.target = f; b.t = 0; b.flee = 0;
     b.p.set(f.x + rand(-3, 3), top(f) + rand(0.6, 1.4), f.z + rand(-3, 3));
     b.yaw = Math.random() * Math.PI * 2;
     const h = Math.random(), wing = pastel(h, 0.8, 0.7);
@@ -110,13 +151,15 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
     tint(body, i, pastel(h + 0.5, 0.25, 0.45)); tint(head, i, pastel(h + 0.5, 0.25, 0.5)); tint(stalk, i, pastel(h + 0.5, 0.25, 0.5)); tint(knob, i, pastel(h + 0.5, 0.3, 0.6));
   };
   let colorsDirty = true;
-  const base = new THREE.Matrix4();
+  const base = new THREE.Matrix4(), parts = [body, head, eye, shine, stalk, knob, upper, lower];
+  const assign = makeAssigner(homes, list, (b, i, h) => { spawn(b, i, h); colorsDirty = true; }, (i) => { for (const p of parts) hide(p, i); });
 
   return {
     update(dt: number, player: THREE.Vector3, now: number) {
+      assign(dt, player);
       list.forEach((b, i) => {
-        if (!b.on || Math.hypot(b.p.x - player.x, b.p.z - player.z) > FAR) { b.on = false; spawn(b, i, player.x, player.z); colorsDirty ||= b.on; }
-        if (!b.on) { for (const p of [body, head, eye, shine, stalk, knob, upper, lower]) hide(p, i); return; }
+        if (!b.on) return;
+        const h = b.home!;
         b.t += dt;
         // 캐릭터가 다가오면 앉아 있든 날고 있든 놀라 달아난다
         if (b.flee <= 0 && Math.hypot(b.p.x - player.x, b.p.z - player.z) < FLEE_NEAR) { b.flee = rand(1.8, 2.6); b.rest = false; b.t = 0; }
@@ -133,7 +176,7 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
           b.p.z += Math.cos(b.yaw) * FLY_SPEED * 2 * dt;
           b.p.y += (terrainY(b.p.x, b.p.z) + 2.2 - b.p.y) * Math.min(1, dt * 2);
           if (b.flee <= 0) {
-            b.target = flowerAway(b.p.x + Math.sin(b.yaw) * 5, b.p.z + Math.cos(b.yaw) * 5, 7, player) ?? flowerAway(player.x, player.z, RANGE, player) ?? f;
+            b.target = flowerAway(h.x, h.z, h.r, player) ?? flowerNear(h.x, h.z, h.r) ?? f; // 제 꽃밭으로 돌아간다
             b.t = 0;
           }
         } else if (b.rest) {
@@ -142,7 +185,7 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
           b.bank *= 0.9;
           if (b.t > 0) {
             b.rest = false; b.t = 0;
-            b.target = flowerAway(b.p.x, b.p.z, 7, player) ?? flowerAway(player.x, player.z, RANGE, player) ?? f;
+            b.target = flowerAway(h.x, h.z, h.r, player) ?? f;
             b.p.y += 0.05;
           }
         } else {
@@ -159,7 +202,7 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
           const cruise = top(f) + (d > 1.2 ? 0.7 : d * 0.5) + Math.abs(Math.sin(now * 5 + b.seed)) * 0.12;
           b.p.y += (cruise - b.p.y) * Math.min(1, dt * 2.5);
           if (b.t > 0.6 && d < 0.08 && Math.abs(b.p.y - top(f)) < 0.12) { b.rest = true; b.t = -rand(2, 6); b.p.set(f.x, top(f), f.z); }
-          if (b.t > 14) { b.target = flowerAway(player.x, player.z, RANGE, player) ?? f; b.t = 0; } // 오래 헤매면 다른 꽃으로
+          if (b.t > 14) { b.target = flowerAway(h.x, h.z, h.r, player) ?? f; b.t = 0; } // 오래 헤매면 다른 꽃으로
         }
         base.compose(b.p, _q.setFromEuler(_e.set(0, b.yaw, b.bank, "YXZ")), _s.setScalar(S));
         put(body, i, 0, base, 0, 0.02, 0);
@@ -176,7 +219,7 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
           put(lower, i, k, base, 0, 0.025, -0.025, 0, s * 0.45, s * b.flap * 0.9, s * 0.07, 1, 0.06);
         }
       });
-      for (const p of [body, head, eye, shine, stalk, knob, upper, lower]) {
+      for (const p of parts) {
         p.mesh.instanceMatrix.needsUpdate = true;
         if (colorsDirty && p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true;
       }
@@ -187,7 +230,7 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
 
 // ── 물고기 ──
 // 앞이 +z. 통통한 몸, 큰 눈과 반짝임, 볼 홍조, 살랑이는 꼬리. 물속을 헤엄치다 가끔 물 위로 뛰어오른다
-type Fish = { on: boolean; p: THREE.Vector3; yaw: number; turn: number; t: number; jump: number; nextJump: number; pitch: number; seed: number };
+type Fish = Dweller & { p: THREE.Vector3; yaw: number; turn: number; t: number; jump: number; nextJump: number; pitch: number; seed: number };
 const depthAt = (x: number, z: number) => WATER_Y - terrainY(x, z);
 const fishOk = (x: number, z: number) => { const d = depthAt(x, z); return d > 0.45 && d < 3; };
 
@@ -201,8 +244,19 @@ const onFish = (x: number, y: number, z: number, lift: number) => {
   return _f.multiplyScalar(t).addScaledVector(n, lift).clone();
 };
 
+// 물고기 터: 깊이 0.6~2.5m인 물에서 시드로 고르고 서로 12m 넘게 떨어뜨린다. 한 곳에 1~2마리
+const PONDS = 26;
+function fishPonds(light: boolean) {
+  const r = rng(7702), homes: Home[] = [];
+  for (let k = 0; k < 30000 && homes.length < PONDS; k++) {
+    const a = r() * Math.PI * 2, d = Math.sqrt(r()) * (WORLD - 4), x = Math.cos(a) * d, z = Math.sin(a) * d, depth = depthAt(x, z), n = 1 + Math.floor(r() * 2);
+    if (depth > 0.6 && depth < 2.5 && homes.every((h) => Math.hypot(h.x - x, h.z - z) > 12)) homes.push({ x, z, r: 5, n: light ? 1 : n, members: [] });
+  }
+  return homes;
+}
+
 function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
-  const S = 1.3;
+  const S = 0.65; // 실제 물고기 크기쯤
   const body = part(root, new THREE.SphereGeometry(1, 16, 12), n, 1);
   const tail = part(root, new THREE.SphereGeometry(1, 14, 10).translate(0, 0, -1), n, 1); // 둥근 부채꼴 꼬리. 앞 끝이 원점(몸 쪽)
   const fin = part(root, new THREE.SphereGeometry(1, 10, 8), n, 1);
@@ -210,27 +264,28 @@ function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
   const shine = part(root, new THREE.SphereGeometry(0.008, 6, 5), n, 2, { color: "#ffffff", emissive: "#ffffff", emissiveIntensity: 0.6 });
   const blush = part(root, new THREE.SphereGeometry(0.02, 8, 6), n, 2, { color: "#ff9fb2", roughness: 0.9 });
 
-  const list: Fish[] = Array.from({ length: n }, (_, i) => ({ on: false, p: new THREE.Vector3(), yaw: 0, turn: 0, t: 0, jump: -1, nextJump: 0, pitch: 0, seed: i * 2.1 }));
-  let colorsDirty = false, tries = 0;
-  const spawn = (f: Fish, i: number, px: number, pz: number) => {
-    for (let k = 0; k < 6 && tries < 30; k++, tries++) { // 물이 없는 곳에서 헛되이 많이 찾지 않도록 프레임당 시도를 줄인다
-      const a = Math.random() * Math.PI * 2, d = rand(5, RANGE), x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d;
-      if (!fishOk(x, z)) continue;
-      f.on = true; f.p.set(x, 0, z); f.yaw = Math.random() * Math.PI * 2; f.turn = 0; f.jump = -1; f.nextJump = rand(6, 20);
-      const h = [0.03, 0.08, 0.13, 0.92, 0.75, 0.55][Math.floor(Math.random() * 6)] + rand(-0.02, 0.02);
-      tint(body, i, pastel(h, 0.75, 0.74)); tint(tail, i, pastel(h + 0.05, 0.7, 0.66)); tint(fin, i, pastel(h + 0.05, 0.7, 0.68));
-      colorsDirty = true;
-      return;
+  const list: Fish[] = Array.from({ length: n }, (_, i) => ({ on: false, home: null, p: new THREE.Vector3(), yaw: 0, turn: 0, t: 0, jump: -1, nextJump: 0, pitch: 0, seed: i * 2.1 }));
+  let colorsDirty = false;
+  const spawn = (f: Fish, i: number, home: Home) => {
+    let x = home.x, z = home.z;
+    for (let k = 0; k < 8; k++) { // 터 안의 물속 아무 자리
+      const a = Math.random() * Math.PI * 2, d = Math.random() * home.r, tx = home.x + Math.cos(a) * d, tz = home.z + Math.sin(a) * d;
+      if (fishOk(tx, tz)) { x = tx; z = tz; break; }
     }
+    f.p.set(x, 0, z); f.yaw = Math.random() * Math.PI * 2; f.turn = 0; f.jump = -1; f.nextJump = rand(6, 20);
+    const h = [0.03, 0.08, 0.13, 0.92, 0.75, 0.55][Math.floor(Math.random() * 6)] + rand(-0.02, 0.02);
+    tint(body, i, pastel(h, 0.75, 0.74)); tint(tail, i, pastel(h + 0.05, 0.7, 0.66)); tint(fin, i, pastel(h + 0.05, 0.7, 0.68));
+    colorsDirty = true;
   };
-  const base = new THREE.Matrix4();
+  const base = new THREE.Matrix4(), parts = [body, tail, fin, eye, shine, blush];
+  const assign = makeAssigner(fishPonds(env.light), list, spawn, (i) => { for (const p of parts) hide(p, i); });
 
   return {
     update(dt: number, player: THREE.Vector3, now: number) {
-      tries = 0;
+      assign(dt, player);
       list.forEach((f, i) => {
-        if (!f.on || (f.jump < 0 && Math.hypot(f.p.x - player.x, f.p.z - player.z) > FAR)) { f.on = false; spawn(f, i, player.x, player.z); }
-        if (!f.on) { for (const p of [body, tail, fin, eye, shine, blush]) hide(p, i); return; }
+        if (!f.on) return;
+        const home = f.home!;
         f.t += dt;
         let y: number;
         if (f.jump >= 0) {
@@ -246,6 +301,7 @@ function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
           if (Math.random() < dt * 0.4) f.turn = rand(-0.9, 0.9);
           const ax = f.p.x + Math.sin(f.yaw) * 1.2, az = f.p.z + Math.cos(f.yaw) * 1.2;
           if (!fishOk(ax, az)) f.turn = 2.2 * Math.sign(f.turn || 1);
+          else if (Math.hypot(f.p.x - home.x, f.p.z - home.z) > home.r) f.turn = 1.5 * Math.sign(angleTo(f.yaw, Math.atan2(home.x - f.p.x, home.z - f.p.z)) || 1); // 제 터로 돌아온다
           f.yaw += f.turn * dt;
           const sp = FISH_SPEED * (0.8 + 0.3 * Math.sin(now * 1.3 + f.seed));
           const nx = f.p.x + Math.sin(f.yaw) * sp * dt, nz = f.p.z + Math.cos(f.yaw) * sp * dt;
@@ -268,7 +324,7 @@ function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
           put(blush, i, k, base, c.x, c.y, c.z, 0, s * 1.0, 0, 1, 0.65, 0.35);
         }
       });
-      for (const p of [body, tail, fin, eye, shine, blush]) {
+      for (const p of parts) {
         p.mesh.instanceMatrix.needsUpdate = true;
         if (colorsDirty && p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true;
       }
@@ -278,8 +334,9 @@ function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
 }
 
 export function makeCritters(root: THREE.Object3D, env: CritterEnv) {
-  const flies = makeButterflies(root, env.light ? 4 : 8, env);
-  const fish = makeFish(root, env.light ? 2 : 3, env);
+  // 한꺼번에 움직이는 최대 수(풀). 가까운 사는 곳부터 채운다
+  const flies = makeButterflies(root, env.light ? 8 : 14, env);
+  const fish = makeFish(root, env.light ? 3 : 6, env);
   let now = 0;
   return {
     update(dt: number, player: THREE.Vector3) {
