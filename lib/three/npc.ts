@@ -1,28 +1,28 @@
 import * as THREE from "three";
 import { WORLD, rng } from "../terrain";
+import { type Blob, animateBlob, createBodyGeometry, encodeBody, makeBlob } from "./blob";
 
-// ── 나무지기: 세계 곳곳의 나무를 찾아다니며 가꾸는 역삼각형 NPC ──
+// ── 나무지기: 세계 곳곳의 나무를 찾아다니며 가꾸는 NPC. 몸이 역삼각형이고 얼굴·팔다리·동작은 캐릭터와 같다 ──
 // 서버 없이 모든 접속자가 같은 자리에서 보도록, 길과 일정은 시드로 정하고 위치는 현재 시각(Date.now)만으로 계산한다.
 // 걸을 수 있는 곳 판정은 캐릭터와 같은 blocked를 쓴다
 
 const COUNT = 11;
-const SPEED = 1.5; // m/s
+const SPEED = 2; // m/s. 캐릭터(4m/s)의 절반
 const TEND = 6; // 나무 하나를 가꾸는 시간(초)
 const STOPS = 40; // NPC마다 한 바퀴에 들르는 나무 수
 const FILL = 600; // 나무 사이를 잇는 길목 점 수
 const TREE_SHARE = 0.4; // 이 비율의 나무만 찾아갈 나무로 삼는다(길 만드는 데 드는 시간을 줄인다)
 const LINK = 11; // 이 거리(m) 안의 점끼리 곧은 길이 막히지 않으면 잇는다
-const HOVER = 0.3; // 꼭짓점이 땅에서 뜬 높이
-const SIZE = { r: 0.5, h: 1.1 };
 
 type Node = { x: number; z: number; tree: { x: number; z: number } | null; edges: number[] };
 type Seg = { t0: number; t1: number; ax: number; az: number; bx: number; bz: number; tree: { x: number; z: number } | null };
-type Npc = { mesh: THREE.Mesh; tour: Seg[]; length: number; yaw: number; lean: number; phase: number };
+type Npc = { ch: Blob; tour: Seg[]; length: number; phase: number };
 
 export type NpcEnv = {
   blocked: (x: number, z: number) => boolean;
   standY: (x: number, z: number) => number;
   trees: { x: number; z: number }[];
+  font: string;
 };
 
 function clearPath(env: NpcEnv, ax: number, az: number, bx: number, bz: number) {
@@ -149,14 +149,25 @@ function* makeTour(nodes: Node[], trees: number[], seed: number) {
   return { tour, length: t };
 }
 
-// 꼭짓점이 아래를 향한 삼각뿔
-function npcMesh(color: THREE.Color) {
-  const geo = new THREE.ConeGeometry(SIZE.r, SIZE.h, 3);
-  geo.rotateX(Math.PI);
-  geo.translate(0, SIZE.h / 2, 0);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.6, flatShading: true }));
-  mesh.castShadow = true;
-  return mesh;
+// 몸: 앞에서 보면 위가 넓고 아래가 좁은 역삼각형. 모서리는 둥글게, 앞뒤로는 조금 납작하게.
+// 빚기 화면의 굳히기(bake)처럼 바닥을 y=0, 키를 1.45로 맞춰 캐릭터 몸과 같은 형식으로 만든다
+export function npcBody() {
+  const geo = createBodyGeometry(), pos = geo.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const p = 6, k = Math.pow(Math.abs(v.x) ** p + Math.abs(v.y) ** p + Math.abs(v.z) ** p, 1 / p);
+    v.multiplyScalar(0.72 / k); // 둥근 정육면체
+    const t = (v.y + 0.72) / 1.44, w = 0.32 + 1.05 * t; // 아래 0.32배 → 위 1.37배
+    v.x *= w; v.z *= 0.5 + 0.45 * t;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeBoundingBox();
+  geo.translate(0, -geo.boundingBox!.min.y, 0);
+  const h = geo.boundingBox!.max.y - geo.boundingBox!.min.y;
+  geo.scale(1.45 / h, 1.45 / h, 1.45 / h);
+  const out = encodeBody(geo);
+  geo.dispose();
+  return out;
 }
 
 // 준비(길 만들기)는 update에서 프레임마다 BUDGET ms씩 나눠 하고, 다 되면 NPC가 나타난다
@@ -171,14 +182,17 @@ export function makeNpcs(root: THREE.Object3D, env: NpcEnv) {
     const { nodes, ok } = r.value;
     const trees = nodes.map((n, i) => (n.tree && ok(i) ? i : -1)).filter((i) => i >= 0);
     if (trees.length < 2) return;
+    const body = npcBody();
     for (let i = 0; i < COUNT; i++) {
       const make = makeTour(nodes, trees, 9000 + i * 77);
       let m = make.next();
       while (!m.done) { yield; m = make.next(); }
       const { tour, length } = m.value;
-      const mesh = npcMesh(new THREE.Color().setHSL(i / COUNT, 0.45, 0.78));
-      root.add(mesh);
-      npcs.push({ mesh, tour, length, yaw: 0, lean: 0, phase: i * 1.7 });
+      const c = new THREE.Color().setHSL(i / COUNT, 0.5, 0.74);
+      const ch = makeBlob({ seed: 5000 + i, name: "", top: `#${c.getHexString()}`, bottom: `#${c.offsetHSL(0.08, 0, -0.04).getHexString()}`, body }, env.font);
+      ch.g.traverse((o) => { if ((o as THREE.Sprite).isSprite) o.visible = false; }); // 이름표는 달지 않는다
+      root.add(ch.g);
+      npcs.push({ ch, tour, length, phase: i * 1.7 });
       yield;
     }
   })();
@@ -191,29 +205,23 @@ export function makeNpcs(root: THREE.Object3D, env: NpcEnv) {
         while (performance.now() < end) if (build.next().done) { building = false; break; }
         if (building) return;
       }
-      const now = Date.now() / 1000, k = fresh ? 1 : Math.min(1, dt * 5);
+      const now = Date.now() / 1000, k = fresh ? 1 : Math.min(1, dt * 8);
       fresh = false;
       for (const n of npcs) {
         const t = (now + n.phase * 1000) % n.length;
         let lo = 0, hi = n.tour.length - 1;
         while (lo < hi) { const m = (lo + hi) >> 1; if (n.tour[m].t1 < t) lo = m + 1; else hi = m; }
         const s = n.tour[lo], u = Math.min(1, Math.max(0, (t - s.t0) / (s.t1 - s.t0)));
-        const x = s.ax + (s.bx - s.ax) * u, z = s.az + (s.bz - s.az) * u;
-        let wantYaw: number, wantLean: number, y = HOVER + 0.07 * Math.sin(now * 2.2 + n.phase);
-        if (s.tree) {
-          // 나무를 보고 고개 숙이듯 기울어 살랑살랑 흔든다
-          wantYaw = Math.atan2(s.tree.x - x, s.tree.z - z);
-          wantLean = 0.35 + 0.12 * Math.sin(now * 3 + n.phase);
-          y += 0.06 * Math.abs(Math.sin(now * 3 + n.phase));
-        } else {
-          wantYaw = Math.atan2(s.bx - s.ax, s.bz - s.az);
-          wantLean = 0.15;
-        }
-        const dy = wantYaw - n.yaw;
-        n.yaw += Math.atan2(Math.sin(dy), Math.cos(dy)) * k;
-        n.lean += (wantLean - n.lean) * k;
-        n.mesh.position.set(x, env.standY(x, z) + y, z);
-        n.mesh.rotation.set(n.lean, n.yaw, 0, "YXZ");
+        const ch = n.ch, x = s.ax + (s.bx - s.ax) * u, z = s.az + (s.bz - s.az) * u;
+        // 나무 앞에서는 나무를 보고 두 손을 모은다. 걸을 때는 가는 쪽을 본다
+        const wantYaw = s.tree ? Math.atan2(s.tree.x - x, s.tree.z - z) : Math.atan2(s.bx - s.ax, s.bz - s.az);
+        const dy = wantYaw - ch.yaw;
+        ch.yaw += Math.atan2(Math.sin(dy), Math.cos(dy)) * k;
+        if (s.tree ? ch.state !== "pray" : ch.state === "pray") { ch.state = s.tree ? "pray" : "idle"; ch.stateT = 0; }
+        ch.g.position.set(x, 0, z);
+        ch.baseY = env.standY(x, z);
+        animateBlob(ch, dt, !s.tree);
+        if (!s.tree) ch.walk -= dt * 9 * (1 - SPEED / 4); // 걸음은 캐릭터(4m/s) 기준이라 느린 만큼 보폭을 늦춘다
       }
     },
   };

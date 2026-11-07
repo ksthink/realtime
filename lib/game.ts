@@ -124,7 +124,7 @@ export class Game {
     this.sun.shadow.bias = -0.0008;
     this.root.add(this.sun, this.sun.target);
     this.world = buildWorld(this.root);
-    this.npcs = makeNpcs(this.root, { blocked, standY, trees: this.world.trees });
+    this.npcs = makeNpcs(this.root, { blocked, standY, trees: this.world.trees, font });
     this.root.add(this.petals.points, this.splash.group, this.skyline.mesh);
 
     this.me = this.makeAvatar(meRow);
