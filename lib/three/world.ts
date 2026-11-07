@@ -331,6 +331,8 @@ export function buildWorld(root: THREE.Object3D) {
   const onLand = (_x: number, y: number, _z: number, slope: number) => y > WATER_Y + 0.5 && slope < 0.9;
   // 바깥 고리는 예전과 같은 밀도가 되게 수를 정했다
   const treeOk = (x: number, y: number, z: number, s: number) => onLand(x, y, z, s) && y < 5;
+  // 새가 앉는 자리: 잎덩이 꼭대기, 덤불 위, 계단·난간의 나무(땅은 새가 그때그때 고른다)
+  const perches: { x: number; y: number; z: number; kind: "tree" | "bush" | "wood" }[] = [];
   const trees: (Item & { h?: number })[] = widen(scatter(620, 11, 8, OLD_WORLD + 3, treeOk, oldGround), scatter(860, 111, OLD_WORLD - 6, WORLD + 3, treeOk), 3);
   tiled(instanced(root, trunkGeometry(), new THREE.MeshStandardMaterial({ roughness: 1 }), trees, (t, o, col) => {
     const h = (t.h = 0.9 + t.r() * 0.8); // 잎덩이도 이 높이에 얹는다
@@ -345,6 +347,8 @@ export function buildWorld(root: THREE.Object3D) {
     t.r();
     const h = t.h!, k = 2 + Math.floor(t.r() * 2), hue = 0.25 + t.r() * 0.12, l = 0.5 + t.r() * 0.15;
     for (let i = 0; i < k; i++) canopy.push({ x: t.x + (t.r() - 0.5) * 0.5, y: t.y + h + 0.3 + i * 0.45 * (t.r() + 0.5), z: t.z + (t.r() - 0.5) * 0.5, s: 0.55 + t.r() * 0.5, hue, l, hide: t.hide });
+    const top = canopy[canopy.length - 1]; // 맨 위 잎덩이 꼭대기에 새가 앉는다
+    if (!t.hide) perches.push({ x: top.x, y: top.y + top.s * 0.9 * 0.96, z: top.z, kind: "tree" });
   }
   // 수관과 덤불은 그림자도 같이 흔든다. 어긋나면 표면이 제 그림자 안으로 들어가 얼룩이 생길 수 있다
   tiled(instanced(root, canopyGeometry(), sway(new THREE.MeshStandardMaterial({ roughness: 0.95 }), windTime, "canopy", canopyWind), canopy, (t, o, col) => {
@@ -355,6 +359,7 @@ export function buildWorld(root: THREE.Object3D) {
     const s = 0.35 + t.r() * 0.45;
     o.position.y += s * 0.5;
     o.scale.set(s * 1.3, s * 0.8, s * 1.2);
+    if (!t.hide) perches.push({ x: t.x, y: t.y + s * 1.3, z: t.z, kind: "bush" });
     col.setHSL(0.28 + t.r() * 0.08, 0.4, 0.5 + t.r() * 0.12);
   }, TILE.bush), sway(new THREE.MeshDepthMaterial(), windTime, "bush", bushWind));
   // 같은 색 꽃이 4송이쯤 모여 핀다(무리 수 × 4 ≈ 예전 꽃 수)
@@ -398,7 +403,7 @@ export function buildWorld(root: THREE.Object3D) {
     col.setHSL(0.09, 0.06, 0.55 + t.r() * 0.15);
   }, TILE.rock));
 
-  hillStairs(root);
+  for (const w of hillStairs(root)) perches.push({ ...w, kind: "wood" });
 
   const sph = new THREE.Sphere(), fwd = new THREE.Vector3(), to = new THREE.Vector3();
   return {
@@ -406,6 +411,7 @@ export function buildWorld(root: THREE.Object3D) {
     flowers: flowers.filter((t) => !t.hide).map((t) => ({ x: t.x + t.b.tip.x, z: t.z + t.b.tip.z, top: t.y + t.b.tip.y + 0.03 })),
     // 꽃 군락지 가운데와 반지름(나비가 많이 산다)
     meadows: meadows.centers,
+    perches,
     // cam·fog를 주면 칸을 거른다. 안개 끝(시선 깊이)보다 먼 칸은 안개색뿐이라 끄고, 꽃은 안개가 시작하는 거리 근처에서 줄여 없앤다
     update(dt: number, cam?: THREE.Camera, fog?: THREE.Fog) {
       windTime.value += dt;
@@ -490,4 +496,10 @@ function hillStairs(root: THREE.Object3D) {
     o.scale.z = o.position.distanceTo(l.to) * 2 + 0.06;
     woodCol(c);
   });
+  // 새가 앉는 자리: 기둥 꼭대기, 윗난간 가운데, 디딤판 몇 칸 걸러
+  return [
+    ...posts.map((p) => ({ x: p.x, y: p.y + POST_H + 0.05, z: p.z })),
+    ...rails.filter((_l, i) => i % 2 === 0).map((l) => ({ x: l.x, y: l.y + 0.035, z: l.z })),
+    ...steps.filter((_s, i) => i % 4 === 0).map((s) => ({ x: s.x, y: s.y, z: s.z })),
+  ];
 }

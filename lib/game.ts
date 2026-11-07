@@ -126,7 +126,7 @@ export class Game {
     this.world = buildWorld(this.root);
     this.root.add(this.petals.points, this.splash.group, this.skyline.mesh);
     // 나비·물고기: 내 둘레에서만 사는 배경 생물. 휴대폰에서는 수를 줄인다
-    this.critters = makeCritters(this.root, { flowers: this.world.flowers, meadows: this.world.meadows, splash: (x, z, yaw) => this.splash.emit(x, z, yaw), light: matchMedia(TOUCH_QUERY).matches });
+    this.critters = makeCritters(this.root, { flowers: this.world.flowers, meadows: this.world.meadows, perches: this.world.perches, splash: (x, z, yaw) => this.splash.emit(x, z, yaw), light: matchMedia(TOUCH_QUERY).matches });
 
     this.me = this.makeAvatar(meRow);
     const a = Math.random() * Math.PI * 2;
