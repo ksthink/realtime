@@ -3,7 +3,7 @@ import type { CharacterRow, DropResult, NetEvents, Pose, StoneRow, TowerRow } fr
 import { Net } from "./net";
 import { formatLife, MAX_STONES, PICK_RANGE, PRAY_COOLDOWN_MS, PRAY_RANGE, STACK_RADIUS, TOWER_GAP, WISH_AT } from "./rules";
 import { playDrop, playPick, playStep, setWaterDistance, stopSound, stopStep } from "./sound";
-import { HILL, WORLD, blocked, clamp, canWade, hillBlocked, isWater, lerp, onStairs, stairDip, terrainY, walkY, waterDistance } from "./terrain";
+import { HILL, WATER_Y, WORLD, blocked, clamp, canWade, hillBlocked, isWater, lerp, onStairs, stairDip, terrainY, walkY, waterDistance } from "./terrain";
 import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
 import { makePetals } from "./three/petals";
@@ -112,7 +112,8 @@ export class Game {
   private world: ReturnType<typeof buildWorld>;
   private critters: ReturnType<typeof makeCritters>;
   private fireflies: ReturnType<typeof makeFireflies>;
-  // 내 랜턴만 땅을 비추는 진짜 빛을 단다(PC). 다른 사람 랜턴과 휴대폰은 빛 번짐만. 낮에는 꺼서(visible) 계산하지 않는다
+  // 내 랜턴만 땅을 비추는 진짜 빛을 단다(PC). 다른 사람 랜턴과 휴대폰은 빛 번짐만.
+  // 낮에도 빛은 그대로 두고 세기만 0으로 한다. 켜고 끄면(visible) 빛 개수가 바뀌어 모든 재질의 셰이더를 다시 만드느라 화면이 멈칫한다
   private lanternLight: THREE.PointLight | null = null;
   private lanternAt = new THREE.Vector3();
   private glowOn: StoneView | null = null;
@@ -144,7 +145,6 @@ export class Game {
     this.critters = makeCritters(this.root, { flowers: this.world.flowers, meadows: this.world.meadows, perches: this.world.perches, splash: (x, z, yaw) => this.splash.emit(x, z, yaw), light: matchMedia(TOUCH_QUERY).matches });
     if (!matchMedia(TOUCH_QUERY).matches) {
       this.lanternLight = new THREE.PointLight("#ffc77d", 0, 6, 1.4);
-      this.lanternLight.visible = false;
       this.root.add(this.lanternLight);
     }
     this.fireflies = makeFireflies(this.root, { perches: this.world.perches, flowers: this.world.flowers, light: matchMedia(TOUCH_QUERY).matches });
@@ -392,7 +392,7 @@ export class Game {
   private dropPoint() {
     const p = this.me.g.position;
     const x = p.x + Math.sin(this.me.yaw) * 0.7, z = p.z + Math.cos(this.me.yaw) * 0.7;
-    return !isWater(x, z) && !hillBlocked(x, z) && Math.hypot(x, z) < WORLD ? { x, z } : { x: p.x, z: p.z };
+    return !isWater(x, z) && !sunken(x, z) && !hillBlocked(x, z) && Math.hypot(x, z) < WORLD ? { x, z } : { x: p.x, z: p.z };
   }
   // 계단 위에서는 돌이 디딤판에 묻히므로 놓지 않는다
   private get onStairs() {
@@ -584,9 +584,8 @@ export class Game {
     this.fireflies.update(dt, p, this.night, lit ? this.lanternAt : null); // 어두워지면 반딧불이가 나온다
     if (this.lanternLight) {
       const k = lit ? lanternLit.light : 0;
-      this.lanternLight.visible = k > 0.01;
       this.lanternLight.intensity = k * LANTERN_LIGHT;
-      this.lanternLight.position.copy(this.lanternAt);
+      if (k > 0) this.lanternLight.position.copy(this.lanternAt);
     }
     this.petals.update(dt, p);
     this.splash.update(dt);
@@ -1003,6 +1002,10 @@ function standY(x: number, z: number) {
   return w === terrainY(x, z) - stairDip(x, z) ? groundAt(x, z) : w;
 }
 
+// 지형 함수로는 땅인데 눈에 보이는 땅(메시)은 물 밑으로 꺼진 곳. 돌다리 옆면처럼 높이가 뚝 떨어지는 곳에서
+// 메시 격자(0.72m)가 그 사이를 비탈로 이어 생긴다. 여기 서면 물에 빠져 보이므로 들어가지 않고 돌도 놓지 않는다
+const sunken = (x: number, z: number) => !isWater(x, z) && groundAt(x, z) < WATER_Y - 0.05;
+
 const SLIDE_STEP = Math.PI / 24; // 막히면 7.5°씩 돌려 가며 비켜 갈 방향을 찾는다
 
 // dir 방향으로 dist만큼 움직이고, 실제로 움직인 거리를 돌려준다.
@@ -1014,6 +1017,7 @@ function stepOnLand(p: THREE.Vector3, dir: THREE.Vector3, dist: number) {
     for (const s of k ? [1, -1] : [1]) {
       const a = a0 + s * k * SLIDE_STEP, nx = p.x + Math.sin(a) * d, nz = p.z + Math.cos(a) * d;
       if (blocked(nx, nz)) continue;
+      if (sunken(nx, nz) && standY(nx, nz) <= standY(p.x, p.z)) continue; // 꺼진 곳으로는 못 들어가고(얕은 물에서도), 이미 빠져 있으면 올라오는 쪽으로만 간다
       p.x = nx; p.z = nz;
       return d;
     }
