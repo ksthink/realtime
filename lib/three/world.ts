@@ -3,7 +3,9 @@ import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferG
 import { HILL, STAIR, TREADS, WATER_Y, WORLD, baseTerrainY, clamp, rimY, rng, stairDip, terrainY, vnoise } from "../terrain";
 import { buildBigTree } from "./bigtree";
 import { WIND_DIR } from "./petals";
+import { buildFloaters } from "./floaters";
 import { stoneGeometry } from "./stone";
+import { buildUnderwater } from "./underwater";
 import { tickWater, waterMaterial } from "./water";
 
 // 바람 세기. 값은 최대 흔들림(m)이고, 0이면 그 부위가 멈춘다. RIPPLE은 수관 표면 일렁임(반지름 비율)
@@ -404,6 +406,9 @@ export function buildWorld(root: THREE.Object3D) {
   }, TILE.rock));
 
   for (const w of hillStairs(root)) perches.push({ ...w, kind: "wood" });
+  // 물속 수초·조약돌과 수면의 개구리밥·연잎. 작아서 꽃처럼 가까운 칸만 그리고 그림자는 없다
+  tiled(buildUnderwater(root, windTime), undefined, true);
+  tiled(buildFloaters(root, windTime), undefined, true);
 
   const sph = new THREE.Sphere(), fwd = new THREE.Vector3(), to = new THREE.Vector3();
   return {

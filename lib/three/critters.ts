@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { WATER_Y, WORLD, rng, terrainY, walkY } from "../terrain";
 import { WIND_DIR } from "./petals";
 
-// ── 작은 동물들: 나비, 물고기, 작은 새 ──
+// ── 작은 동물들: 나비, 물고기, 피라미떼, 작은 새 ──
 // 사는 곳(꽃밭·물웅덩이)은 세계 곳곳에 시드로 정해 두어 모든 접속자에게 같다. 동물이 많은 곳과 없는 곳이 생긴다.
 // 실제로 움직이는 건 내 캐릭터 가까이(ACTIVE) 있는 사는 곳의 동물뿐이고, 움직임은 접속자끼리 맞추지 않는다.
 // 부위마다 InstancedMesh 하나로 그려 그리기 호출은 부위 수만큼이다. 모양은 단순하게, 대신 귀엽게:
@@ -592,10 +592,163 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
   };
 }
 
+// ── 피라미떼 ──
+// 손가락 마디만 한 은빛 물고기 수십 마리가 떼 지어 수면 바로 아래를 헤엄친다. 앞이 +z.
+// CPU는 떼 가운데의 길 찾기만 하고(떼마다 유니폼 몇 개), 한 마리 한 마리의 자리·흔들림·꼬리 살랑임은 버텍스 셰이더가 정한다.
+// 풀 전체가 InstancedMesh 하나(그리기 호출 1번)이고, 마리마다 하는 CPU 일은 없다. 모양은 가는 마름모 둘(삼각형 4개)뿐
+type School = Dweller & {
+  c: THREE.Vector3; yaw: number; turn: number; sp: number; // 떼 가운데, 방향, 돌기, 빠르기
+  lag: THREE.Vector3; lagYaw: number; // 뒤처져 따라오는 가운데·방향(떼 뒤쪽 물고기가 이걸 따라 물결처럼 돈다)
+  dart: number; flee: number; spread: number; room: number; wag: number; count: number; check: number;
+};
+const minnowOk = (x: number, z: number, min = 0.65) => { const d = depthAt(x, z); return d > min && d < 3; }; // 떼 가운데는 넉넉히 깊은 곳으로
+const MINNOW_SPEED = 0.35;
+const MINNOW_COLORS = ["#b9cde2", "#c3d2e8", "#bcd8dd", "#cbc8e6", "#c8dbe8", "#d6d4e4"]; // 은빛 띤 파스텔 하늘·청회·연보라
+
+// 피라미 터: 깊이 0.5~2.5m인 물에서 시드로 고르고 서로 12m 넘게 떨어뜨린다. 한 곳에 한 떼
+const SCHOOLS = 24;
+function minnowSchools() {
+  const r = rng(7703), homes: Home[] = [];
+  for (let k = 0; k < 30000 && homes.length < SCHOOLS; k++) {
+    const a = r() * Math.PI * 2, d = Math.sqrt(r()) * (WORLD - 4), x = Math.cos(a) * d, z = Math.sin(a) * d, depth = depthAt(x, z);
+    if (depth > 0.5 && depth < 2.5 && homes.every((h) => Math.hypot(h.x - x, h.z - z) > 12)) homes.push({ x, z, r: 6, n: 1, members: [] });
+  }
+  return homes;
+}
+
+function makeMinnows(root: THREE.Object3D, nSchools: number, env: CritterEnv) {
+  const S = 1.6; // 게임 카메라에서 보이도록 조금 크게(몸길이 9cm쯤)
+  const PER = env.light ? 20 : 40, MIN = env.light ? 12 : 25, N = nSchools * PER;
+  // 위에서 보이는 납작한 마름모(등) + 옆에서 보이는 세운 마름모(옆구리)
+  const geo = new THREE.BufferGeometry();
+  const nose = [0, 0, 0.026], tail = [0, 0, -0.03], l = [-0.0055, 0, 0.004], r = [0.0055, 0, 0.004], up = [0, 0.006, 0.004], dn = [0, -0.0045, 0.004];
+  geo.setAttribute("position", new THREE.Float32BufferAttribute([nose, l, tail, nose, tail, r, nose, up, tail, nose, tail, dn].flat(), 3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute([...Array(6).fill([0, 1, 0]), ...Array(6).fill([1, 0, 0])].flat(), 3));
+  // 등(위에서 보이는 판)은 진하게, 옆구리(세운 판)는 은빛으로 밝게: 물 위에서 보면 진한 실루엣이라 물빛에 묻히지 않는다
+  geo.setAttribute("color", new THREE.Float32BufferAttribute([...Array(6).fill([0.5, 0.52, 0.58]), ...Array(6).fill([1.08, 1.08, 1.1])].flat(), 3));
+  // 마리마다 고정값: 떼 안의 제 자리(ox, oz), 수면 아래 깊이, 위상 / 떼 번호, 떼 안 순번(0~1)
+  const off = new Float32Array(N * 4), meta = new Float32Array(N * 2);
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()); // 앞뒤로 조금 긴 타원(0.5×0.8m) 안에 고르게
+    off.set([Math.cos(a) * d * 0.5, Math.sin(a) * d * 0.8, rand(0.08, 0.3), Math.random() * 100], i * 4);
+    meta.set([Math.floor(i / PER), (i % PER) / PER], i * 2);
+  }
+  geo.setAttribute("aOff", new THREE.InstancedBufferAttribute(off, 4));
+  geo.setAttribute("aMeta", new THREE.InstancedBufferAttribute(meta, 2));
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.45, side: THREE.DoubleSide, vertexColors: true });
+  const mesh = new THREE.InstancedMesh(geo, mat, N);
+  mesh.frustumCulled = false;
+  for (let i = 0; i < N; i++) mesh.setColorAt(i, WHITE); // 자리 행렬은 단위행렬 그대로 둔다
+  root.add(mesh);
+  // 떼마다: A = (가운데 x, z, 방향, 퍼짐), B = (뒤처진 가운데 x, z, 방향, 보이는 마리 비율 — 0이면 숨김), C = (꼬리 위상, 꼬리 폭)
+  const uA = Array.from({ length: nSchools }, () => new THREE.Vector4()), uB = uA.map(() => new THREE.Vector4()), uC = uA.map(() => new THREE.Vector4());
+  const uTime = { value: 0 };
+  mat.customProgramCacheKey = () => "minnow" + nSchools;
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, { uA: { value: uA }, uB: { value: uB }, uC: { value: uC }, uTime });
+    sh.vertexShader = `attribute vec4 aOff; attribute vec2 aMeta; uniform vec4 uA[${nSchools}]; uniform vec4 uB[${nSchools}]; uniform vec4 uC[${nSchools}]; uniform float uTime;\n` + sh.vertexShader
+      .replace("#include <beginnormal_vertex>", `#include <beginnormal_vertex>
+        int si = int(aMeta.x + 0.5); vec4 A = uA[si], B = uB[si], C = uC[si]; float q = aOff.w;
+        float lag = fract(q * 7.31) * 0.8; // 뒤처지는 정도
+        vec2 cen = mix(A.xy, B.xy, lag); float sy = mix(A.z, B.z, lag);
+        // 제 자리가 천천히 바뀌어 떼 모양이 일렁이고, 작게 떨린다
+        float lx = (aOff.x + sin(uTime * 0.31 + q) * 0.18) * A.w + sin(uTime * 3.1 + q * 7.0) * 0.02;
+        float lz = (aOff.y + sin(uTime * 0.23 + q * 1.7) * 0.25) * A.w + sin(uTime * 2.7 + q * 5.0) * 0.02;
+        vec2 fp = cen + vec2(lx * cos(sy) + lz * sin(sy), -lx * sin(sy) + lz * cos(sy));
+        float wag = sin(C.x + q * 3.0);
+        float fyaw = sy + wag * 0.1 + sin(uTime * 0.5 + q * 2.0) * 0.15, fc = cos(fyaw), fs = sin(fyaw);
+        float on = aMeta.y < B.w ? ${S.toFixed(2)} : 0.0;
+        objectNormal = vec3(objectNormal.x * fc + objectNormal.z * fs, objectNormal.y, -objectNormal.x * fs + objectNormal.z * fc);`)
+      .replace("#include <begin_vertex>", `vec3 transformed = position;
+        float bend = clamp((0.005 - position.z) / 0.035, 0.0, 1.0);
+        transformed.x += wag * 0.007 * C.y * bend * bend; // 꼬리 쪽을 옆으로 휜다
+        transformed *= on;
+        transformed = vec3(transformed.x * fc + transformed.z * fs, transformed.y, -transformed.x * fs + transformed.z * fc)
+          + vec3(fp.x, ${WATER_Y.toFixed(3)} - aOff.z + sin(uTime * 0.9 + q) * 0.03, fp.y);`);
+    // 새처럼 명암을 줄인다
+    sh.fragmentShader = sh.fragmentShader.replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, vec3(0.0, 0.0, 1.0), 0.65));");
+  };
+
+  const list: School[] = Array.from({ length: nSchools }, () => ({ on: false, home: null, c: new THREE.Vector3(), yaw: 0, turn: 0, sp: MINNOW_SPEED, lag: new THREE.Vector3(), lagYaw: 0, dart: 0, flee: 0, spread: 1, room: 1, wag: 0, count: 0, check: 0 }));
+  const col = new THREE.Color();
+  const spawn = (s: School, si: number, h: Home) => {
+    let x = h.x, z = h.z;
+    for (let k = 0; k < 12; k++) {
+      const a = Math.random() * Math.PI * 2, d = Math.random() * h.r * 0.7, tx = h.x + Math.cos(a) * d, tz = h.z + Math.sin(a) * d;
+      if (minnowOk(tx, tz)) { x = tx; z = tz; break; }
+    }
+    s.c.set(x, 0, z); s.lag.copy(s.c); s.yaw = s.lagYaw = Math.random() * Math.PI * 2;
+    s.turn = 0; s.sp = MINNOW_SPEED; s.dart = rand(3, 9); s.flee = 0; s.spread = 1; s.room = 1; s.check = 0;
+    s.count = MIN + Math.floor(Math.random() * (PER - MIN + 1));
+    const hex = MINNOW_COLORS[Math.floor(Math.random() * MINNOW_COLORS.length)];
+    for (let j = 0; j < PER; j++) mesh.setColorAt(si * PER + j, col.set(hex).offsetHSL(0, 0, rand(-0.03, 0.03)));
+    mesh.instanceColor!.needsUpdate = true;
+  };
+  const assign = makeAssigner(minnowSchools(), list, spawn, (si) => uB[si].w = 0);
+  // 갈 방향 want 쪽 앞이 물이 아니면 둘레로 조금씩 틀어 본다
+  const clearWay = (c: THREE.Vector3, want: number, ahead: number) => {
+    for (const d of [0, 0.5, -0.5, 1, -1, 1.6, -1.6, 2.3, -2.3, Math.PI]) {
+      const a = want + d;
+      if (minnowOk(c.x + Math.sin(a) * ahead, c.z + Math.cos(a) * ahead)) return a;
+    }
+    return want + Math.PI;
+  };
+
+  return {
+    update(dt: number, player: THREE.Vector3, now: number) {
+      assign(dt, player);
+      uTime.value = now;
+      list.forEach((s, si) => {
+        if (!s.on) return;
+        const h = s.home!, c = s.c;
+        // 캐릭터가 다가오면 반대쪽으로 확 달아나며 조금 흩어진다
+        if (s.flee <= 0 && Math.hypot(c.x - player.x, c.z - player.z) < 3) s.flee = rand(1.4, 2);
+        let want: number, rate: number, speed: number;
+        if (s.flee > 0) {
+          s.flee -= dt;
+          want = clearWay(c, Math.atan2(c.x - player.x, c.z - player.z), 1.5);
+          rate = 9; speed = 1.9;
+        } else {
+          // 평소: 천천히 갈지자로 헤매다, 가끔 다 같이 휙 돌며 짧게 내달린다
+          if (Math.random() < dt * 0.35) s.turn = rand(-0.8, 0.8);
+          if ((s.dart -= dt) <= 0) { s.yaw += rand(0.9, 1.8) * (Math.random() < 0.5 ? -1 : 1); s.sp = 1.3; s.dart = rand(4, 10); }
+          want = s.yaw + s.turn * 0.5;
+          if (Math.hypot(c.x - h.x, c.z - h.z) > h.r) want = Math.atan2(h.x - c.x, h.z - c.z); // 제 터로 돌아온다
+          want = clearWay(c, want, 1.2);
+          rate = 2.5; speed = MINNOW_SPEED;
+        }
+        s.yaw += angleTo(s.yaw, want) * Math.min(1, dt * rate);
+        s.sp += (speed - s.sp) * Math.min(1, dt * (s.flee > 0 ? 6 : 1.2));
+        const nx = c.x + Math.sin(s.yaw) * s.sp * dt, nz = c.z + Math.cos(s.yaw) * s.sp * dt;
+        if (minnowOk(nx, nz)) { c.x = nx; c.z = nz; } else s.yaw += Math.PI * Math.min(1, dt * 3);
+        // 물가가 가까우면 떼를 좁힌다(한 마리 한 마리가 얕은 곳으로 나가지 않게). 0.2초마다 둘레 8곳을 본다
+        const goal = s.flee > 0 ? 1.7 : 1;
+        if ((s.check -= dt) <= 0) {
+          s.check = 0.2; s.room = 0.35;
+          for (const f of [goal, 1, 0.6]) {
+            let ok = true;
+            for (let k = 0; k < 8 && ok; k++) ok = minnowOk(c.x + Math.cos(k * 0.785) * 1.3 * f, c.z + Math.sin(k * 0.785) * 1.3 * f, 0.45);
+            if (ok) { s.room = f; break; }
+          }
+        }
+        const want2 = Math.min(goal, s.room);
+        s.spread += (want2 - s.spread) * Math.min(1, dt * (want2 < s.spread ? 8 : s.flee > 0 ? 3 : 0.6)); // 흩어졌다가 천천히 다시 모인다
+        const k = Math.min(1, dt * (s.flee > 0 ? 5 : 2.5));
+        s.lag.x += (c.x - s.lag.x) * k; s.lag.z += (c.z - s.lag.z) * k; s.lagYaw += angleTo(s.lagYaw, s.yaw) * k;
+        s.wag += dt * (9 + s.sp * 10);
+        uA[si].set(c.x, c.z, s.yaw, s.spread);
+        uB[si].set(s.lag.x, s.lag.z, s.lagYaw, s.count / PER);
+        uC[si].set(s.wag, 0.6 + s.sp * 0.3, 0, 0);
+      });
+    },
+  };
+}
+
 export function makeCritters(root: THREE.Object3D, env: CritterEnv) {
   // 한꺼번에 움직이는 최대 수(풀). 가까운 사는 곳부터 채운다
   const flies = makeButterflies(root, env.light ? 8 : 14, env);
   const fish = makeFish(root, env.light ? 3 : 6, env);
+  const minnows = makeMinnows(root, env.light ? 2 : 3, env); // 피라미 떼 수(PC 3떼×25~40마리, 휴대폰 2떼×12~20마리)
   const birds = makeBirds(root, env.light ? 6 : 12, env);
   let now = 0;
   return {
@@ -603,6 +756,7 @@ export function makeCritters(root: THREE.Object3D, env: CritterEnv) {
       now += dt;
       flies.update(dt, player, now);
       fish.update(dt, player, now);
+      minnows.update(dt, player, now);
       birds.update(dt, player, now);
     },
   };
