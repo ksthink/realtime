@@ -92,7 +92,22 @@ function flowerHeadGeometry(n: number) {
 }
 // 꽃 한 송이의 모양: 줄기 길이·기운 방향과 각도·꽃송이가 숙인 정도·꽃잎 수·색. 줄기와 꽃송이가 같은 값을 쓴다
 type Bloom = { len: number; yaw: number; lean: THREE.Quaternion; head: THREE.Quaternion; tip: THREE.Vector3; petals: number; size: number; hue: number; sat: number; light: number };
-const FLOWER_HUES = [0, 0.08, 0.14, 0.78, 0.9, 0.55];
+// 꽃 색: 파스텔 열두 가지 [색조, 채도, 밝기]. 무리·군락마다 하나씩 고르고 송이마다 조금씩 흔든다.
+// 화면 톤매핑이 옅은 색을 더 바래게 하므로 채도를 조금 높게 잡는다
+const FLOWER_PALETTE = [
+  [0.98, 0.75, 0.7], // 산호 분홍
+  [0.06, 0.8, 0.72], // 복숭아
+  [0.08, 0.85, 0.64], // 셔벗 주황
+  [0.13, 0.85, 0.66], // 버터 노랑
+  [0.12, 0.45, 0.86], // 크림
+  [0.6, 0.12, 0.92], // 하양
+  [0.75, 0.55, 0.74], // 라벤더
+  [0.79, 0.6, 0.66], // 보라
+  [0.9, 0.65, 0.72], // 꽃분홍
+  [0.99, 0.62, 0.62], // 장미
+  [0.56, 0.7, 0.7], // 하늘
+  [0.65, 0.6, 0.72], // 페리윙클
+];
 function bloom(r: () => number, color: number): Bloom {
   const len = 0.7 + r() * 0.65, yaw = r() * Math.PI * 2, d = r() * Math.PI * 2, tilt = r() * 0.3, droop = 0.25 + r() * 0.45;
   const axis = new THREE.Vector3(Math.cos(d), 0, -Math.sin(d)); // +y를 d 방향으로 눕히는 축
@@ -102,7 +117,7 @@ function bloom(r: () => number, color: number): Bloom {
     head: new THREE.Quaternion().setFromAxisAngle(axis, tilt + droop).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), r() * Math.PI * 2)),
     tip: new THREE.Vector3(0, 0.3 * len, 0).applyQuaternion(lean),
     petals: r() < 0.55 ? 5 : 6, size: 0.8 + r() * 0.45,
-    hue: FLOWER_HUES[color] + (r() - 0.5) * 0.05, sat: 0.5 + r() * 0.2, light: 0.67 + r() * 0.1,
+    hue: FLOWER_PALETTE[color][0] + (r() - 0.5) * 0.04, sat: FLOWER_PALETTE[color][1] + (r() - 0.5) * 0.14, light: FLOWER_PALETTE[color][2] + (r() - 0.5) * 0.08,
   };
 }
 // 꽃 군락지: 평평한 풀밭 몇 곳에 꽃이 130송이쯤(1m²에 3송이 남짓) 빽빽하게 핀다. 군락마다 세 가지 색으로 어울리게
@@ -121,7 +136,7 @@ function meadowFlowers(seed: number, onLand: (x: number, y: number, z: number, s
     }
     if (!flat) continue;
     centers.push({ x, z, r: R });
-    const theme = [Math.floor(r() * 6), Math.floor(r() * 6), Math.floor(r() * 6)];
+    const pick = () => Math.floor(r() * FLOWER_PALETTE.length), theme = [pick(), pick(), pick()];
     for (let n = 0; n < 130; n++) {
       const fa = r() * Math.PI * 2, fd = Math.sqrt(r()) * R, fx = x + Math.cos(fa) * fd, fz = z + Math.sin(fa) * fd, fy = terrainY(fx, fz);
       if (!onLand(fx, fy, fz, slopeAt(fx, fz))) continue;
@@ -137,7 +152,7 @@ function meadowFlowers(seed: number, onLand: (x: number, y: number, z: number, s
 function clusterFlowers(centers: Item[], per: number, seed: number, ok: (x: number, y: number, z: number, slope: number) => boolean, ground = terrainY) {
   const r = rng(seed), out: (Item & { b: Bloom })[] = [];
   for (const c of centers) {
-    const color = Math.floor(r() * 6);
+    const color = Math.floor(r() * FLOWER_PALETTE.length);
     out.push({ ...c, b: bloom(r, color) });
     for (let k = 1; k < per; k++) {
       const a = r() * Math.PI * 2, d = 0.25 + r() * 0.5, x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d, y = ground(x, z);
@@ -228,6 +243,8 @@ export function groundAt(x: number, z: number) {
   return u + v <= 1 ? a + (d - a) * u + (b - a) * v : c + (b - c) * (1 - u) + (d - c) * (1 - v);
 }
 
+const _soil = new THREE.Color();
+
 export function buildWorld(root: THREE.Object3D) {
   // 땅: 높이·경사에 따라 색이 변한다
   const geo = new THREE.PlaneGeometry(S * 2, S * 2, SEG, SEG);
@@ -238,6 +255,8 @@ export function buildWorld(root: THREE.Object3D) {
     col.set(groundCache.col);
     (geo.attributes.normal.array as Float32Array).set(groundCache.normal);
   } else {
+    // 흙: 풀빛과 어울리는 옅은 황토. 몇 m 크기의 얼룩으로 드문드문 드러나고 가장자리는 풀과 부드럽게 섞인다
+    const soil = new THREE.Color("#c6b38e"), soil2 = new THREE.Color("#b8a27e");
     const grass = new THREE.Color("#b9cf9d"), grass2 = new THREE.Color("#9fbf86"), sand = new THREE.Color("#e3d7b8"), lakebed = new THREE.Color("#a2a184"), rock = new THREE.Color("#aaa6a8"), snow = new THREE.Color("#f1f0f4");
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i), y = terrainY(x, z);
@@ -247,6 +266,9 @@ export function buildWorld(root: THREE.Object3D) {
       const rocky = (px: number, pz: number) => baseTerrainY(px, pz) - rimY(px, pz) * 0.5;
       const by = baseTerrainY(x, z), slope = Math.hypot(rocky(x + 0.5, z) - rocky(x - 0.5, z), rocky(x, z + 0.5) - rocky(x, z - 0.5));
       c.copy(grass).lerp(grass2, vnoise(x * 0.3, z * 0.3));
+      const patch = vnoise(x * 0.11 + 3.7, z * 0.11 + 1.9) * 0.65 + vnoise(x * 0.37 + 8.1, z * 0.37 + 5.3) * 0.35; // 큰 얼룩 + 들쭉날쭉한 가장자리
+      const bare = clamp((patch - 0.6) / 0.16, 0, 1);
+      if (bare > 0) c.lerp(_soil.copy(soil).lerp(soil2, vnoise(x * 0.8, z * 0.8)), bare * bare * (3 - 2 * bare) * 0.55);
       if (y < WATER_Y + 0.6) c.lerp(sand, clamp((WATER_Y + 0.6 - y) / 0.6, 0, 1));
       if (y < WATER_Y) c.lerp(lakebed, clamp((WATER_Y - y) / 2.5, 0, 1)); // 호수 바닥: 깊을수록 모래가 조금 어두워진다
       if (slope > 0.7) c.lerp(rock, clamp((slope - 0.7) / 0.8, 0, 1));
