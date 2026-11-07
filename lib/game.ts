@@ -124,7 +124,7 @@ export class Game {
     this.sun.shadow.bias = -0.0008;
     this.root.add(this.sun, this.sun.target);
     this.world = buildWorld(this.root);
-    this.npcs = makeNpcs(this.root, { blocked, standY, font });
+    this.npcs = makeNpcs(this.root, { blocked, standY, font, refract: !matchMedia(TOUCH_QUERY).matches }); // 휴대폰에서는 무거운 빛 투과를 끈다
     this.root.add(this.petals.points, this.splash.group, this.skyline.mesh);
 
     this.me = this.makeAvatar(meRow);

@@ -27,6 +27,7 @@ export type NpcEnv = {
   blocked: (x: number, z: number) => boolean;
   standY: (x: number, z: number) => number;
   font: string;
+  refract: boolean; // false면 빛 투과(굴절)를 쓰지 않는다(휴대폰)
 };
 
 // npc-paths.json의 한 바퀴를 시간표로 푼다. 양수 k는 점 k로 이동, 음수 -(k+1)은 점 k에서 나무 가꾸기
@@ -189,7 +190,7 @@ export function makeNpcs(root: THREE.Object3D, env: NpcEnv) {
         ch.g.rotation.x = n.lean;
         ch.g.rotation.z = 0.04 * Math.sin(now * 1.3 + n.phase * 2); // 살랑살랑
         swaySprout(n, dt);
-        ch.body.material = ch.g.position.distanceToSquared(camera.position) < NEAR * NEAR ? n.mats.near : n.mats.far;
+        ch.body.material = env.refract && ch.g.position.distanceToSquared(camera.position) < NEAR * NEAR ? n.mats.near : n.mats.far;
         // 떠갈 때 팔이 하늘하늘
         if (!s.tree) for (let a = 0; a < 2; a++) ch.arms[a].rotation.z += (a ? 1 : -1) * (0.25 + 0.12 * Math.sin(now * 3 + n.phase + a));
       }
