@@ -372,10 +372,19 @@ function birdNests(env: CritterEnv) {
   return homes;
 }
 const BIRD_COLORS = [
-  // [등, 배] 참새 갈색이 가장 흔하고, 파스텔 몇 가지가 섞인다
-  ["#b48662", "#f4e8d6"], ["#b48662", "#f4e8d6"], ["#a97c5c", "#f1e4cf"], ["#bf9470", "#f6ecdc"],
-  ["#93aac6", "#f5efe2"], ["#e4c36c", "#fbf2d2"], ["#d79d92", "#f8e7e0"], ["#a8b07d", "#f1efd8"],
+  // [등, 배] 푸른·노란·분홍 파스텔
+  ["#8fc4ff", "#ffffff"], ["#a3d2ff", "#fffdf6"], ["#86d3f0", "#ffffff"],
+  ["#ffd968", "#fffdf2"], ["#ffe384", "#ffffff"], ["#ffcb6b", "#fffaf0"],
+  ["#ffa9c6", "#fffafc"], ["#ffbdd4", "#ffffff"], ["#fb9fbe", "#fff6f8"],
 ] as const;
+// 둥근 부위의 명암을 줄인다: 빛 계산에 쓰는 법선을 카메라 쪽으로 기울여 한쪽만 어두워지지 않게(캐릭터처럼 납작하고 부드럽게)
+function soften(p: Part) {
+  const mat = p.mesh.material as THREE.Material;
+  mat.customProgramCacheKey = () => "soft-critter";
+  mat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, vec3(0.0, 0.0, 1.0), 0.65));");
+  };
+}
 
 function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
   const S = 1.25; // 게임 카메라에서 보이도록 참새보다 조금 크게(몸길이 15cm쯤)
@@ -391,6 +400,7 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
   const tail = part(root, new THREE.SphereGeometry(1, 8, 6).translate(0, 0, -1), n, 1); // 경첩이 z=0
   const leg = part(root, new THREE.CylinderGeometry(0.0025, 0.0025, 0.02, 4).translate(0, -0.01, 0), n, 2, { color: "#d49a6a" });
   const parts = [body, belly, head, beak, eye, shine, blush, wing, tail, leg];
+  for (const p of [body, belly, head, beak, blush, wing, tail, leg]) soften(p);
 
   // 앉을 자리 찾기: 8m 칸으로 나눠 둔다
   const CELL = 8, grid = new Map<string, Perch[]>();
@@ -458,7 +468,7 @@ function makeBirds(root: THREE.Object3D, n: number, env: CritterEnv) {
     const [back, front] = BIRD_COLORS[Math.floor(Math.random() * BIRD_COLORS.length)];
     for (const p of [body, head, wing, tail]) tint(p, i, col.set(back).offsetHSL(0, 0, (Math.random() - 0.5) * 0.04));
     tint(head, i, col.set(back).offsetHSL(0, -0.05, 0.04)); // 머리는 등보다 살짝 밝게
-    tint(wing, i, col.set(back).offsetHSL(0, 0, -0.06)); // 날개는 살짝 진하게
+    tint(wing, i, col.set(back).offsetHSL(0, 0.05, -0.03)); // 날개는 살짝 진하게
     tint(belly, i, col.set(front));
   };
   let colorsDirty = true;
