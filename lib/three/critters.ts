@@ -60,7 +60,9 @@ function wingGeometry() {
 type Butterfly = {
   on: boolean; p: THREE.Vector3; yaw: number; bank: number; rest: boolean; t: number; flap: number;
   target: { x: number; y: number; z: number } | null; seed: number;
+  flee: number; // 남은 달아나기 시간(초). 0보다 크면 캐릭터 반대쪽으로 높이 날아간다
 };
+const FLEE_NEAR = 2.5; // 캐릭터가 이만큼 다가오면 달아난다(m)
 
 function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
   const S = 1.05; // 게임 카메라에서 보이도록 실제보다 조금 크게
@@ -86,13 +88,21 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
     return out.length ? env.flowers[out[Math.floor(Math.random() * out.length)]] : null;
   };
   const top = (f: { y: number }) => f.y + 0.38; // 꽃봉오리 위
+  // (x, z) 둘레 r 안의 꽃 중 캐릭터에서 FLEE_NEAR보다 넉넉히 떨어진 것. 다가갔다 놀라 달아나기를 되풀이하지 않게
+  const flowerAway = (x: number, z: number, r: number, player: THREE.Vector3) => {
+    for (let k = 0; k < 5; k++) {
+      const f = flowerNear(x, z, r);
+      if (f && Math.hypot(f.x - player.x, f.z - player.z) > FLEE_NEAR + 1.5) return f;
+    }
+    return null;
+  };
 
-  const list: Butterfly[] = Array.from({ length: n }, (_, i) => ({ on: false, p: new THREE.Vector3(), yaw: 0, bank: 0, rest: false, t: 0, flap: 0, target: null, seed: i * 1.37 }));
+  const list: Butterfly[] = Array.from({ length: n }, (_, i) => ({ on: false, p: new THREE.Vector3(), yaw: 0, bank: 0, rest: false, t: 0, flap: 0, target: null, seed: i * 1.37, flee: 0 }));
   const spawn = (b: Butterfly, i: number, px: number, pz: number) => {
     const a = Math.random() * Math.PI * 2, d = rand(6, RANGE);
     const f = flowerNear(px + Math.cos(a) * d, pz + Math.sin(a) * d, 8);
     if (!f) return;
-    b.on = true; b.rest = false; b.target = f; b.t = 0;
+    b.on = true; b.rest = false; b.target = f; b.t = 0; b.flee = 0;
     b.p.set(f.x + rand(-3, 3), top(f) + rand(0.6, 1.4), f.z + rand(-3, 3));
     b.yaw = Math.random() * Math.PI * 2;
     const h = Math.random(), wing = pastel(h, 0.8, 0.7);
@@ -108,14 +118,31 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
         if (!b.on || Math.hypot(b.p.x - player.x, b.p.z - player.z) > FAR) { b.on = false; spawn(b, i, player.x, player.z); colorsDirty ||= b.on; }
         if (!b.on) { for (const p of [body, head, eye, shine, stalk, knob, upper, lower]) hide(p, i); return; }
         b.t += dt;
+        // 캐릭터가 다가오면 앉아 있든 날고 있든 놀라 달아난다
+        if (b.flee <= 0 && Math.hypot(b.p.x - player.x, b.p.z - player.z) < FLEE_NEAR) { b.flee = rand(1.8, 2.6); b.rest = false; b.t = 0; }
         const f = b.target!;
-        if (b.rest) {
+        if (b.flee > 0) {
+          // 캐릭터 반대쪽으로 빠르게, 위로 솟아오르며. 다 달아나면 그쪽 멀리 있는 꽃을 새로 찾는다
+          b.flee -= dt;
+          b.flap = Math.sin(now * 24 + b.seed) * 1.0;
+          const want = Math.atan2(b.p.x - player.x, b.p.z - player.z) + Math.sin(now * 3 + b.seed) * 0.3;
+          const turn = angleTo(b.yaw, want);
+          b.yaw += turn * Math.min(1, dt * 6);
+          b.bank += (THREE.MathUtils.clamp(turn, -0.6, 0.6) - b.bank) * Math.min(1, dt * 4);
+          b.p.x += Math.sin(b.yaw) * FLY_SPEED * 2 * dt;
+          b.p.z += Math.cos(b.yaw) * FLY_SPEED * 2 * dt;
+          b.p.y += (terrainY(b.p.x, b.p.z) + 2.2 - b.p.y) * Math.min(1, dt * 2);
+          if (b.flee <= 0) {
+            b.target = flowerAway(b.p.x + Math.sin(b.yaw) * 5, b.p.z + Math.cos(b.yaw) * 5, 7, player) ?? flowerAway(player.x, player.z, RANGE, player) ?? f;
+            b.t = 0;
+          }
+        } else if (b.rest) {
           // 꽃에 앉아 날개를 천천히 접었다 편다. 가까이 오거나 쉴 만큼 쉬면 날아오른다
           b.flap = 0.25 + 0.55 * (0.5 + 0.5 * Math.sin(now * 2 + b.seed));
           b.bank *= 0.9;
-          if (b.t > 0 || Math.hypot(b.p.x - player.x, b.p.z - player.z) < 1.3) {
+          if (b.t > 0) {
             b.rest = false; b.t = 0;
-            b.target = flowerNear(b.p.x, b.p.z, 7) ?? flowerNear(player.x, player.z, RANGE) ?? f;
+            b.target = flowerAway(b.p.x, b.p.z, 7, player) ?? flowerAway(player.x, player.z, RANGE, player) ?? f;
             b.p.y += 0.05;
           }
         } else {
@@ -132,7 +159,7 @@ function makeButterflies(root: THREE.Object3D, n: number, env: CritterEnv) {
           const cruise = top(f) + (d > 1.2 ? 0.7 : d * 0.5) + Math.abs(Math.sin(now * 5 + b.seed)) * 0.12;
           b.p.y += (cruise - b.p.y) * Math.min(1, dt * 2.5);
           if (b.t > 0.6 && d < 0.08 && Math.abs(b.p.y - top(f)) < 0.12) { b.rest = true; b.t = -rand(2, 6); b.p.set(f.x, top(f), f.z); }
-          if (b.t > 14) { b.target = flowerNear(player.x, player.z, RANGE) ?? f; b.t = 0; } // 오래 헤매면 다른 꽃으로
+          if (b.t > 14) { b.target = flowerAway(player.x, player.z, RANGE, player) ?? f; b.t = 0; } // 오래 헤매면 다른 꽃으로
         }
         base.compose(b.p, _q.setFromEuler(_e.set(0, b.yaw, b.bank, "YXZ")), _s.setScalar(S));
         put(body, i, 0, base, 0, 0.02, 0);
@@ -251,8 +278,8 @@ function makeFish(root: THREE.Object3D, n: number, env: CritterEnv) {
 }
 
 export function makeCritters(root: THREE.Object3D, env: CritterEnv) {
-  const flies = makeButterflies(root, env.light ? 12 : 24, env);
-  const fish = makeFish(root, env.light ? 6 : 10, env);
+  const flies = makeButterflies(root, env.light ? 4 : 8, env);
+  const fish = makeFish(root, env.light ? 2 : 3, env);
   let now = 0;
   return {
     update(dt: number, player: THREE.Vector3) {
