@@ -250,6 +250,8 @@ export function buildWorld(root: THREE.Object3D) {
   return {
     // 보이는 작은 나무 밑동 자리(NPC가 찾아간다)
     trees: trees.filter((t) => !t.hide).map((t) => ({ x: t.x, z: t.z })),
+    // 보이는 꽃 밑동 자리(나비가 앉는다)
+    flowers: flowers.filter((t) => !t.hide).map((t) => ({ x: t.x, y: t.y, z: t.z })),
     // cam·fog를 주면 칸을 거른다. 안개 끝(시선 깊이)보다 먼 칸은 안개색뿐이라 끄고, 꽃은 안개가 시작하는 거리 근처에서 줄여 없앤다
     update(dt: number, cam?: THREE.Camera, fog?: THREE.Fog) {
       windTime.value += dt;

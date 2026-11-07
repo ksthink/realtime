@@ -10,6 +10,7 @@ import { makePetals } from "./three/petals";
 import { makeSkyline } from "./three/skyline";
 import { makeSplash } from "./three/splash";
 import { makePickGlow, makeStoneMesh } from "./three/stone";
+import { makeCritters } from "./three/critters";
 import { makeNpcs } from "./three/npc";
 import { buildWorld, groundAt } from "./three/world";
 import { seeThrough } from "./three/bigtree";
@@ -98,6 +99,7 @@ export class Game {
   private skyline = makeSkyline();
   private world: ReturnType<typeof buildWorld>;
   private npcs: ReturnType<typeof makeNpcs>;
+  private critters: ReturnType<typeof makeCritters>;
   private glowOn: StoneView | null = null;
   private glowK = 0;
   private waterT = 0;
@@ -126,6 +128,8 @@ export class Game {
     this.world = buildWorld(this.root);
     this.npcs = makeNpcs(this.root, { blocked, standY, font, refract: !matchMedia(TOUCH_QUERY).matches }); // 휴대폰에서는 무거운 빛 투과를 끈다
     this.root.add(this.petals.points, this.splash.group, this.skyline.mesh);
+    // 나비·물고기: 내 둘레에서만 사는 배경 생물. 휴대폰에서는 수를 줄인다
+    this.critters = makeCritters(this.root, { flowers: this.world.flowers, splash: (x, z, yaw) => this.splash.emit(x, z, yaw), light: matchMedia(TOUCH_QUERY).matches });
 
     this.me = this.makeAvatar(meRow);
     const a = Math.random() * Math.PI * 2;
@@ -555,6 +559,7 @@ export class Game {
     const p = this.me.g.position;
     this.world.update(dt, this.camera, this.scene.fog as THREE.Fog);
     this.npcs.update(dt, this.camera);
+    this.critters.update(dt, p);
     this.petals.update(dt, p);
     this.splash.update(dt);
     this.sun.position.copy(p).add(SUN_OFF);
