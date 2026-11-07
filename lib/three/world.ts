@@ -398,8 +398,6 @@ export function buildWorld(root: THREE.Object3D) {
 
   const sph = new THREE.Sphere(), fwd = new THREE.Vector3(), to = new THREE.Vector3();
   return {
-    // 보이는 작은 나무 밑동 자리(NPC가 찾아간다)
-    trees: trees.filter((t) => !t.hide).map((t) => ({ x: t.x, z: t.z })),
     // 보이는 꽃송이 자리와 그 윗면 높이(나비가 앉는다)
     flowers: flowers.filter((t) => !t.hide).map((t) => ({ x: t.x + t.b.tip.x, z: t.z + t.b.tip.z, top: t.y + t.b.tip.y + 0.03 })),
     // 꽃 군락지 가운데와 반지름(나비가 많이 산다)

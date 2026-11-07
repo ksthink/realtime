@@ -38,8 +38,6 @@ const BRIDGES = [
   { x: 4, river: 1, minus: 7.5, plus: 19 }, { x: -40, river: 1, minus: 19.5, plus: 7 },
   { x: 38, river: 1, minus: 11.5, plus: 7.5 },
 ];
-// 다리마다 가운데 줄의 [x, 시작 z, 끝 z]. 강 건너로 길을 이을 때 쓴다
-export const bridgeLines = () => BRIDGES.map((b) => { const c = RIVERS[b.river](b.x); return [b.x, c - b.minus, c + b.plus] as const; });
 
 // 동산: 꼭대기(plateauR 안)가 topY로 평평한 언덕. stairs는 꼭대기에서 계단이 뻗는 방향(라디안).
 // 반경 r 밖에서는 땅이 그대로이고, 비탈은 계단으로만 오르내린다
@@ -188,7 +186,7 @@ export const canWade = (x: number, z: number) => {
   const y = terrainY(x, z);
   return y < WATER_Y + 0.12 && (y > WATER_Y - WADE_DEPTH || PUDDLES.some(([px, pz, r]) => (x - px) ** 2 + (z - pz) ** 2 < r * r));
 };
-// 캐릭터(와 NPC)가 들어갈 수 없는 곳: 세계 밖, 걸어서 못 건너는 물, 동산 비탈
+// 캐릭터가 들어갈 수 없는 곳: 세계 밖, 걸어서 못 건너는 물, 동산 비탈
 export const blocked = (x: number, z: number) => Math.hypot(x, z) > WORLD || (isWater(x, z) && !canWade(x, z)) || hillBlocked(x, z);
 // 캐릭터가 딛는 높이. 웅덩이에서는 발목만 잠기게 물 바닥 대신 수면 바로 아래를 딛는다
 // 계단에서는 디딤판을, 계단 둘레에서는 낮춰 그린 땅을 딛는다

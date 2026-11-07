@@ -40,7 +40,6 @@ function Scene({ onGame, db, me, font, start }: { onGame(g: Game | null): void; 
 
   useEffect(() => {
     gl.toneMappingExposure = 0.78;
-    gl.transmissionResolutionScale = 0.5; // 나무지기 NPC의 빛 투과(굴절)용 화면. 반 해상도로 충분하다
     const g = new Game(scene, camera as THREE.PerspectiveCamera, (ev) => new Net(db, me.user_id, me.name, ev), me, font, start);
     game.current = g;
     onGame(g);
