@@ -305,16 +305,19 @@ export function buildWorld(root: THREE.Object3D) {
   const onLand = (_x: number, y: number, _z: number, slope: number) => y > WATER_Y + 0.5 && slope < 0.9;
   // 바깥 고리는 예전과 같은 밀도가 되게 수를 정했다
   const treeOk = (x: number, y: number, z: number, s: number) => onLand(x, y, z, s) && y < 5;
-  const trees = widen(scatter(620, 11, 8, OLD_WORLD + 3, treeOk, oldGround), scatter(860, 111, OLD_WORLD - 6, WORLD + 3, treeOk), 3);
+  const trees: (Item & { h?: number })[] = widen(scatter(620, 11, 8, OLD_WORLD + 3, treeOk, oldGround), scatter(860, 111, OLD_WORLD - 6, WORLD + 3, treeOk), 3);
   tiled(instanced(root, trunkGeometry(), new THREE.MeshStandardMaterial({ roughness: 1 }), trees, (t, o, col) => {
-    const h = 0.9 + t.r() * 0.8;
+    const h = (t.h = 0.9 + t.r() * 0.8); // 잎덩이도 이 높이에 얹는다
     o.position.y += h / 2;
     o.scale.set(1, h, 1);
     col.set("#8b6a52").offsetHSL(0, 0, (t.r() - 0.5) * 0.1);
   }, TILE.trunk));
   const canopy: { x: number; y: number; z: number; s: number; hue: number; l: number; hide?: boolean }[] = [];
   for (const t of trees) {
-    const h = 0.9 + t.r() * 0.8, k = 2 + Math.floor(t.r() * 2), hue = 0.25 + t.r() * 0.12, l = 0.5 + t.r() * 0.15;
+    // 잎덩이는 줄기 높이(t.h)에 얹는다. 예전엔 높이를 따로 뽑아 잎덩이가 줄기 위에 떠 있곤 했다.
+    // 뽑던 난수는 그대로 하나 버려서 다른 나무들의 모양·색은 바뀌지 않게 한다
+    t.r();
+    const h = t.h!, k = 2 + Math.floor(t.r() * 2), hue = 0.25 + t.r() * 0.12, l = 0.5 + t.r() * 0.15;
     for (let i = 0; i < k; i++) canopy.push({ x: t.x + (t.r() - 0.5) * 0.5, y: t.y + h + 0.3 + i * 0.45 * (t.r() + 0.5), z: t.z + (t.r() - 0.5) * 0.5, s: 0.55 + t.r() * 0.5, hue, l, hide: t.hide });
   }
   // 수관과 덤불은 그림자도 같이 흔든다. 어긋나면 표면이 제 그림자 안으로 들어가 얼룩이 생길 수 있다
