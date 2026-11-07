@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { FOG_TINT_GLSL, fogTintUniforms } from "./fogtint";
 import { clamp, lerp, rng } from "../terrain";
 
 // 마을 너머 멀리 어렴풋이 보이는 산줄기. 카메라를 따라다녀 늘 지평선에 걸려 있고, 먼저 그리며 깊이를 쓰지 않아 마을의 모든 것이 그 앞에 그려진다.
@@ -117,8 +118,9 @@ export function makeSkyline() {
   const uHaze = { value: haze };
   mat.onBeforeCompile = (s) => {
     s.uniforms.uHaze = uHaze;
-    s.vertexShader = s.vertexShader.replace("#include <common>", "#include <common>\nattribute float haze;\nvarying float vHaze;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvHaze = haze;");
-    s.fragmentShader = s.fragmentShader.replace("#include <common>", "#include <common>\nuniform vec3 uHaze;\nvarying float vHaze;").replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb += vHaze * uHaze;");
+    Object.assign(s.uniforms, fogTintUniforms); // 하늘빛도 땅의 안개처럼 해 쪽은 노을빛, 반대쪽은 푸르게
+    s.vertexShader = s.vertexShader.replace("#include <common>", "#include <common>\nattribute float haze;\nvarying float vHaze;\nvarying vec3 vSkyDir;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvHaze = haze;\nvSkyDir = position;");
+    s.fragmentShader = s.fragmentShader.replace("#include <common>", `#include <common>\nuniform vec3 uHaze;\nvarying float vHaze;\nvarying vec3 vSkyDir;\n${FOG_TINT_GLSL}`).replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb += vHaze * fogTintLinear(uHaze, vSkyDir);");
   };
   const mesh = new THREE.Mesh(geo, mat);
   mesh.renderOrder = -100; // 맨 먼저 그린다. 깊이를 쓰지 않으니 마을이 늘 그 위에 그려진다

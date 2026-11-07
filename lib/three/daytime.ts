@@ -8,7 +8,8 @@ const LAT = 37.5665, LON = 126.978, RAD = Math.PI / 180;
 const NORTH = 0.75; // 북쪽 방향(라디안, atan2(z, x)). skyline.ts의 백두산(1.05)·한라산(-1.95)과 맞춘다
 export const N_AXIS = new THREE.Vector3(Math.cos(NORTH), 0, Math.sin(NORTH));
 export const E_AXIS = new THREE.Vector3(-Math.sin(NORTH), 0, Math.cos(NORTH));
-const SHADOW_MIN = Math.sin(18 * RAD); // 그림자가 너무 길어지지 않게 빛의 높이를 이만큼 아래로는 내리지 않는다
+// 그림자 빛의 높이를 이만큼 아래로는 내리지 않는다. 아침·저녁 해는 낮게 둬 그림자가 길게 늘어지고, 달은 높게 둬 밤이 어수선하지 않게 한다
+const SHADOW_MIN = Math.sin(9 * RAD), SHADOW_MIN_MOON = Math.sin(18 * RAD);
 
 // ───────── 시계 ─────────
 function makeClock() {
@@ -52,24 +53,25 @@ function eclDir(lon: number, lat: number, ecl: number, out: THREE.Vector3) {
 // ───────── 하늘빛 열쇠 ─────────
 // 해 높이(도)마다 하나. 아침(해가 동쪽)과 저녁(서쪽)을 따로 둬 새벽과 황혼의 빛깔이 다르다. 24° 위는 오늘의 낮 그대로
 type Key = { h: number; night: number; zen: string; hor: string; hs: string; hg: string; hi: number; lc: string; li: number; mtn: string; wc: string; wk: number; gc: string; gk: number; sc: string };
-const NIGHT: Omit<Key, "h"> = { night: 1, zen: "#5d6ba4", hor: "#8a94c4", hs: "#b4bdee", hg: "#8792b2", hi: 1.4, lc: "#c4cff6", li: 0.9, mtn: "#8c95c2", wc: "#5f6ea0", wk: 0.35, gc: "#8a94c4", gk: 0, sc: "#ffe6b8" };
+// 해가 낮을수록 곧은 빛(lc·li)은 따뜻하고 세게, 하늘빛(hs·hi)은 푸르스름하고 약하게 둬서 빛 받는 쪽과 그늘 쪽의 빛깔이 갈린다
+const NIGHT: Omit<Key, "h"> = { night: 1, zen: "#1f2d55", hor: "#3a4b74", hs: "#9aa8dc", hg: "#76809e", hi: 0.92, lc: "#b8c6f4", li: 0.7, mtn: "#56648e", wc: "#3c4c7a", wk: 0.38, gc: "#8a94c4", gk: 0, sc: "#ffe6b8" };
 const DAY: Omit<Key, "h"> = { night: 0, zen: "#d9e3ef", hor: "#d9e3ef", hs: "#f3ecdf", hg: "#b9c9b4", hi: 1.6, lc: "#ffe9c9", li: 3, mtn: "#ffffff", wc: "#d9e3ef", wk: 0, gc: "#ffffff", gk: 0, sc: "#fff4d6" };
 const MORNING: Key[] = [
   { h: -12, ...NIGHT },
-  { h: -8, night: 0.8, zen: "#7f8cc0", hor: "#aab1d7", hs: "#b6bfe8", hg: "#8a94b0", hi: 1.25, lc: "#c3cbf0", li: 0.7, mtn: "#9da5cc", wc: "#7b86b8", wk: 0.28, gc: "#c9b5d6", gk: 0.2, sc: "#ffe2b0" }, // 새벽
-  { h: -3, night: 0.55, zen: "#9ba7d4", hor: "#dbc6d8", hs: "#d8cde6", hg: "#a3a8bd", hi: 1.4, lc: "#dcc8e6", li: 0.8, mtn: "#bcb6d2", wc: "#aaa4cc", wk: 0.22, gc: "#f3c4c0", gk: 0.5, sc: "#ffd8a6" },
-  { h: 1, night: 0.35, zen: "#b6c1e2", hor: "#f2cfc2", hs: "#f2d6d2", hg: "#b4b6c0", hi: 1.5, lc: "#ffcfb0", li: 1.4, mtn: "#dccbd8", wc: "#f0bcaa", wk: 0.18, gc: "#ffc29a", gk: 0.7, sc: "#ffd29c" }, // 일출
-  { h: 6, night: 0.15, zen: "#c5d1ea", hor: "#f0ddd0", hs: "#f6e2d6", hg: "#bac0bc", hi: 1.55, lc: "#ffdab6", li: 2.2, mtn: "#f0dfe0", wc: "#f2cbb6", wk: 0.1, gc: "#ffd1aa", gk: 0.45, sc: "#ffe2b2" },
-  { h: 14, night: 0, zen: "#d2def0", hor: "#e2e6ec", hs: "#f5ecdc", hg: "#b8c8b6", hi: 1.55, lc: "#ffe6c4", li: 2.8, mtn: "#f8f5f2", wc: "#e6ddd6", wk: 0.04, gc: "#ffe3c4", gk: 0.15, sc: "#fff0d0" }, // 아침
+  { h: -8, night: 0.8, zen: "#3e4f84", hor: "#6f7aa8", hs: "#aab2e2", hg: "#848aa8", hi: 1.0, lc: "#c8c4ee", li: 0.55, mtn: "#7c86b2", wc: "#5e6c9e", wk: 0.28, gc: "#c9b5d6", gk: 0.2, sc: "#ffe2b0" }, // 새벽
+  { h: -3, night: 0.55, zen: "#9ba7d4", hor: "#dbc6d8", hs: "#c6c4ea", hg: "#a49cb4", hi: 1.15, lc: "#f4c4cc", li: 0.75, mtn: "#bcb6d2", wc: "#aaa4cc", wk: 0.22, gc: "#f3c4c0", gk: 0.5, sc: "#ffd8a6" },
+  { h: 1, night: 0.35, zen: "#b6c1e2", hor: "#f2cfc2", hs: "#cdd0ee", hg: "#c4b4ac", hi: 1.18, lc: "#ffbea2", li: 3.0, mtn: "#dccbd8", wc: "#f0bcaa", wk: 0.18, gc: "#ffc29a", gk: 0.7, sc: "#ffd29c" }, // 일출
+  { h: 6, night: 0.15, zen: "#c5d1ea", hor: "#f0ddd0", hs: "#d8dcf0", hg: "#c6bfae", hi: 1.25, lc: "#ffcca6", li: 3.6, mtn: "#f0dfe0", wc: "#f2cbb6", wk: 0.1, gc: "#ffd1aa", gk: 0.45, sc: "#ffe2b2" },
+  { h: 14, night: 0, zen: "#d2def0", hor: "#e2e6ec", hs: "#e8e6e6", hg: "#bcc6b2", hi: 1.45, lc: "#ffdcb8", li: 3.3, mtn: "#f8f5f2", wc: "#e6ddd6", wk: 0.04, gc: "#ffe3c4", gk: 0.15, sc: "#fff0d0" }, // 아침
   { h: 24, ...DAY },
 ];
 const EVENING: Key[] = [
   { h: -12, ...NIGHT },
-  { h: -8, night: 0.8, zen: "#7480bb", hor: "#9fa6d3", hs: "#b3bbe8", hg: "#8a92b0", hi: 1.25, lc: "#c0c8ef", li: 0.7, mtn: "#959dc8", wc: "#707eb3", wk: 0.3, gc: "#bba8d3", gk: 0.18, sc: "#ffd8a0" }, // 저녁
-  { h: -3, night: 0.55, zen: "#9097cd", hor: "#d3b8d1", hs: "#d4c4e4", hg: "#a3a4be", hi: 1.4, lc: "#d8c0e0", li: 0.8, mtn: "#b3aacc", wc: "#a098c6", wk: 0.25, gc: "#f2b6b8", gk: 0.5, sc: "#ffc890" },
-  { h: 1, night: 0.35, zen: "#b3b8dd", hor: "#f2c5ba", hs: "#f3cfcc", hg: "#b5b1c0", hi: 1.5, lc: "#ffc4ac", li: 1.4, mtn: "#d9bfcf", wc: "#eeb1a0", wk: 0.22, gc: "#ffb08c", gk: 0.8, sc: "#ffc48e" }, // 황혼
-  { h: 6, night: 0.15, zen: "#c8cfe6", hor: "#f3d7c2", hs: "#f8dfcc", hg: "#bdbcb4", hi: 1.55, lc: "#ffd2a4", li: 2.2, mtn: "#f0d8d2", wc: "#f4c4a2", wk: 0.13, gc: "#ffc792", gk: 0.55, sc: "#ffd89e" },
-  { h: 14, night: 0, zen: "#d4dcec", hor: "#e8e2dc", hs: "#f7e9d6", hg: "#bbc7b0", hi: 1.55, lc: "#ffe0b6", li: 2.8, mtn: "#f8f0ea", wc: "#eedcca", wk: 0.06, gc: "#ffd8b0", gk: 0.2, sc: "#fff0cc" },
+  { h: -8, night: 0.8, zen: "#38487e", hor: "#6a73a4", hs: "#a8aee2", hg: "#8a86a8", hi: 1.0, lc: "#d0bce8", li: 0.55, mtn: "#767fae", wc: "#56649a", wk: 0.3, gc: "#bba8d3", gk: 0.18, sc: "#ffd8a0" }, // 저녁
+  { h: -3, night: 0.55, zen: "#9097cd", hor: "#d3b8d1", hs: "#c2bce8", hg: "#a898b0", hi: 1.15, lc: "#f8b8c0", li: 0.8, mtn: "#b3aacc", wc: "#a098c6", wk: 0.25, gc: "#f2b6b8", gk: 0.5, sc: "#ffc890" },
+  { h: 1, night: 0.35, zen: "#b3b8dd", hor: "#f2c5ba", hs: "#cbc9ec", hg: "#c8b0a4", hi: 1.2, lc: "#ffae88", li: 3.2, mtn: "#d9bfcf", wc: "#eeb1a0", wk: 0.22, gc: "#ffb08c", gk: 0.8, sc: "#ffc48e" }, // 황혼
+  { h: 6, night: 0.15, zen: "#c8cfe6", hor: "#f3d7c2", hs: "#d6d8ee", hg: "#cabaa4", hi: 1.25, lc: "#ffbf8e", li: 3.7, mtn: "#f0d8d2", wc: "#f4c4a2", wk: 0.13, gc: "#ffc792", gk: 0.55, sc: "#ffd89e" },
+  { h: 14, night: 0, zen: "#d4dcec", hor: "#e8e2dc", hs: "#e8e4e4", hg: "#bec6ae", hi: 1.45, lc: "#ffd6aa", li: 3.35, mtn: "#f8f0ea", wc: "#eedcca", wk: 0.06, gc: "#ffd8b0", gk: 0.2, sc: "#fff0cc" },
   { h: 24, ...DAY },
 ];
 const COLS = ["zen", "hor", "hs", "hg", "lc", "mtn", "wc", "gc", "sc"] as const;
@@ -145,7 +147,7 @@ export function makeDaytime() {
 
       // 그림자 빛: 낮은 해, 밤은 달(지면 아래면 하늘 위쪽의 은은한 빛). 해가 질 무렵 빛이 약할 때 서서히 넘어간다
       const moonUp = smooth(-2, 6, s.moonAlt);
-      clampUp(_b.copy(s.moonDir).lerp(_a.set(0.2, 1, 0.3), 1 - moonUp));
+      clampUp(_b.copy(s.moonDir).lerp(_a.set(0.2, 1, 0.3), 1 - moonUp), SHADOW_MIN_MOON);
       clampUp(_a.copy(s.sunDir));
       s.lightDir.copy(_b).lerp(_a, smooth(-6, 2, h)).normalize();
       s.lightI = num.li * (1 - s.night * (0.45 - 0.45 * moonUp * (0.3 + 0.7 * s.moonLit)));
@@ -155,10 +157,10 @@ export function makeDaytime() {
   return s;
 }
 
-// 그림자가 지나치게 길어지지 않게 빛의 높이를 SHADOW_MIN 위로 올린다
-function clampUp(v: THREE.Vector3) {
+// 그림자가 지나치게 길어지지 않게 빛의 높이를 min 위로 올린다
+function clampUp(v: THREE.Vector3, min = SHADOW_MIN) {
   v.normalize();
-  if (v.y >= SHADOW_MIN) return v;
-  const hl = Math.hypot(v.x, v.z) || 1, c = Math.sqrt(1 - SHADOW_MIN ** 2);
-  return v.set((v.x / hl) * c, SHADOW_MIN, (v.z / hl) * c);
+  if (v.y >= min) return v;
+  const hl = Math.hypot(v.x, v.z) || 1, c = Math.sqrt(1 - min ** 2);
+  return v.set((v.x / hl) * c, min, (v.z / hl) * c);
 }

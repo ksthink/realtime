@@ -16,6 +16,8 @@ import { lanternLit, tickLanterns } from "./three/lantern";
 import { buildWorld, groundAt } from "./three/world";
 import { seeThrough } from "./three/bigtree";
 import { makeDaytime } from "./three/daytime";
+import { updateFogTint } from "./three/fogtint";
+import { fitSunShadow } from "./three/sunshadow";
 import { makeSky } from "./three/sky";
 import { waterMood } from "./three/water";
 
@@ -39,7 +41,6 @@ type Remote = { blob: Blob; target: THREE.Vector3; targetYaw: number; moving: bo
 type Floater = { sprite: THREE.Sprite; t: number };
 
 const CAMS = ["따라가기", "하늘에서"];
-const SUN_DIST = Math.hypot(8, 14, 6); // 그림자 빛을 내 자리에서 이만큼 떨어진, 해(밤에는 달) 쪽에 둔다
 const UP = new THREE.Vector3(0, 1, 0);
 // 안개(가까이, 멀리)와 카메라가 그리는 거리. 땅에서는 앞의 값, 동산 꼭대기에서는 뒤의 값으로 천천히 바뀐다
 const FOG_GROUND = [48, 150, 260], FOG_TOP = [110, 300, 320];
@@ -135,9 +136,7 @@ export class Game {
     this.sun = new THREE.DirectionalLight("#ffe9c9", 3);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
-    const sc = this.sun.shadow.camera;
-    sc.left = sc.bottom = -24; sc.right = sc.top = 24; sc.far = 60;
-    this.sun.shadow.bias = -0.0008;
+    // 그림자 상자 크기·깊이·치우침은 빛 높이에 따라 fitSunShadow가 맞춘다
     this.root.add(this.sun, this.sun.target);
     this.world = buildWorld(this.root);
     this.root.add(this.petals.points, this.splash.group, this.skyline.mesh);
@@ -592,9 +591,7 @@ export class Game {
     this.petals.update(dt, p);
     this.splash.update(dt);
     this.updateDaytime();
-    this.sun.position.copy(p).addScaledVector(this.daytime.lightDir, SUN_DIST);
-    this.sun.target.position.copy(p);
-    this.sun.target.updateMatrixWorld();
+    fitSunShadow(this.sun, p, this.daytime.lightDir, this.camera); // 해가 낮으면 긴 그림자를 담도록 그림자 상자를 늘린다
   }
 
   // 하늘·안개·빛·먼 산·물빛을 지금 하늘에 맞춘다. 한낮(해 높이 24° 위)은 예전 값 그대로다
@@ -606,6 +603,7 @@ export class Game {
     this.sun.color.copy(d.light); this.sun.intensity = d.lightI;
     this.skyline.tint(d.horizon, d.mountain);
     waterMood.color.value.copy(d.water); waterMood.k.value = d.waterK;
+    updateFogTint(d);
     this.sky.update(this.camera, d, this.starPx);
   }
 
