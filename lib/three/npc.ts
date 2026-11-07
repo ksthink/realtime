@@ -109,19 +109,20 @@ export function npcBody() {
   return out;
 }
 
-// 슬라임 재질 두 벌. 둘 다 매끈하고, 보는 각도에 따라 무지개빛(박막 간섭)이 돌며 안쪽이 은은하게 빛난다.
+// 슬라임 재질 두 벌. 캐릭터(무광)와 어울리도록 반짝임·반사는 거의 없애고, 무지개빛(박막 간섭)은 은은하게, 안쪽은 살짝 빛난다.
+// 반사를 남기면 환경맵이 없어 가장자리가 검게 비치므로 반사 세기를 낮춘다
 // near: 진짜 빛 투과(transmission). 몸 너머의 것(뒤·옆에서 본 눈코입과 팔, 배경)이 물방울을 지나며 굴절돼 보인다.
 //       화면을 한 번 더 그려야 해서 무거우므로 카메라 가까이(NEAR) 있는 NPC에만 쓴다
 // far: 그냥 반투명. 멀리서는 굴절이 보이지 않으니 가볍게
 const NEAR = 18;
 function slime(color: THREE.Color) {
   const common = {
-    vertexColors: true, roughness: 0.1, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08,
-    iridescence: 1, iridescenceIOR: 1.35, iridescenceThicknessMinimum: 180, iridescenceThicknessMaximum: 620,
+    vertexColors: true, roughness: 0.65, metalness: 0, specularIntensity: 0.15,
+    iridescence: 0.35, iridescenceIOR: 1.35, iridescenceThicknessMinimum: 180, iridescenceThicknessMaximum: 620,
     emissive: color, emissiveIntensity: 0.18,
   };
   return {
-    near: new THREE.MeshPhysicalMaterial({ ...common, transmission: 0.85, ior: 1.33, thickness: 0.9, attenuationColor: color, attenuationDistance: 1.6 }),
+    near: new THREE.MeshPhysicalMaterial({ ...common, transmission: 0.55, ior: 1.1, thickness: 0.4, attenuationColor: color, attenuationDistance: 1.6 }),
     far: new THREE.MeshPhysicalMaterial({ ...common, transparent: true, opacity: 0.72 }),
   };
 }
