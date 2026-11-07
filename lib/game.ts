@@ -3,7 +3,7 @@ import type { CharacterRow, DropResult, NetEvents, Pose, StoneRow, TowerRow } fr
 import { Net } from "./net";
 import { formatLife, MAX_STONES, PICK_RANGE, PRAY_COOLDOWN_MS, PRAY_RANGE, STACK_RADIUS, TOWER_GAP, WISH_AT } from "./rules";
 import { playDrop, playPick, playStep, setWaterDistance, stopSound, stopStep } from "./sound";
-import { HILL, WORLD, clamp, canWade, hillBlocked, isWater, lerp, onStairs, stairDip, terrainY, walkY, waterDistance } from "./terrain";
+import { HILL, WORLD, blocked, clamp, canWade, hillBlocked, isWater, lerp, onStairs, stairDip, terrainY, walkY, waterDistance } from "./terrain";
 import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, makeBlob } from "./three/blob";
 import { TowerLabel, floatingText } from "./three/label";
 import { makePetals } from "./three/petals";
@@ -124,7 +124,7 @@ export class Game {
     this.sun.shadow.bias = -0.0008;
     this.root.add(this.sun, this.sun.target);
     this.world = buildWorld(this.root);
-    this.npcs = makeNpcs(this.root, { blocked, standY, trees: this.world.trees, font });
+    this.npcs = makeNpcs(this.root, { blocked, standY, font });
     this.root.add(this.petals.points, this.splash.group, this.skyline.mesh);
 
     this.me = this.makeAvatar(meRow);
@@ -957,7 +957,6 @@ function standY(x: number, z: number) {
   return w === terrainY(x, z) - stairDip(x, z) ? groundAt(x, z) : w;
 }
 
-const blocked = (x: number, z: number) => Math.hypot(x, z) > WORLD || (isWater(x, z) && !canWade(x, z)) || hillBlocked(x, z);
 const SLIDE_STEP = Math.PI / 24; // 막히면 7.5°씩 돌려 가며 비켜 갈 방향을 찾는다
 
 // dir 방향으로 dist만큼 움직이고, 실제로 움직인 거리를 돌려준다.

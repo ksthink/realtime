@@ -9,7 +9,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "NODE_OPTIONS=--experimental-websocket node --test --test-force-exit tests/rules.test.mjs",
-    "gen:spawn": "tsx scripts/gen-spawn-points.ts"
+    "gen:spawn": "tsx scripts/gen-spawn-points.ts",
+    "gen:npc": "tsx scripts/gen-npc-paths.ts"
   },
   "dependencies": {
     "@react-three/fiber": "^9.8.2",

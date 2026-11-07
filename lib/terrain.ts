@@ -188,6 +188,8 @@ export const canWade = (x: number, z: number) => {
   const y = terrainY(x, z);
   return y < WATER_Y + 0.12 && (y > WATER_Y - WADE_DEPTH || PUDDLES.some(([px, pz, r]) => (x - px) ** 2 + (z - pz) ** 2 < r * r));
 };
+// 캐릭터(와 NPC)가 들어갈 수 없는 곳: 세계 밖, 걸어서 못 건너는 물, 동산 비탈
+export const blocked = (x: number, z: number) => Math.hypot(x, z) > WORLD || (isWater(x, z) && !canWade(x, z)) || hillBlocked(x, z);
 // 캐릭터가 딛는 높이. 웅덩이에서는 발목만 잠기게 물 바닥 대신 수면 바로 아래를 딛는다
 // 계단에서는 디딤판을, 계단 둘레에서는 낮춰 그린 땅을 딛는다
 export const walkY = (x: number, z: number) => {
