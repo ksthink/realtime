@@ -210,8 +210,17 @@ export function Sculptor({ busy, error, onDone, onCancel }: { busy: boolean; err
   const [shape, setShape] = useState("sphere");
   const [name, setName] = useState("");
   const trimmed = name.trim();
+  // 이름 없이 입장을 누르면 이름 칸에 커서를 두고 그 위에 안내 말풍선을 잠깐 띄운다
+  const nameRef = useRef<HTMLInputElement>(null);
+  const [nameTip, setNameTip] = useState(false);
+  useEffect(() => {
+    if (!nameTip) return;
+    const t = setTimeout(() => setNameTip(false), 2500);
+    return () => clearTimeout(t);
+  }, [nameTip]);
 
   const finish = () => {
+    if (!trimmed) { setNameTip(true); nameRef.current?.focus(); return; }
     const baked = api.current?.bake();
     if (baked && trimmed) onDone({ name: trimmed, seed: (Math.random() * 2147483647) | 0, ...baked });
   };
@@ -239,11 +248,12 @@ export function Sculptor({ busy, error, onDone, onCancel }: { busy: boolean; err
         <form className="sculpt-foot" onSubmit={(e) => { e.preventDefault(); finish(); }}>
           {error && <p className="error" role="alert">{error}</p>}
           <div className="tools">
-            <label className="name-field">
+            <label className={nameTip ? "name-field ask" : "name-field"}>
               <span>이름</span>
-              <input value={name} maxLength={12} onChange={(e) => setName(e.target.value)} placeholder="예: 감자" autoComplete="off" />
+              <input ref={nameRef} value={name} maxLength={12} onChange={(e) => { setName(e.target.value); setNameTip(false); }} placeholder="예: 감자" autoComplete="off" aria-invalid={nameTip} aria-describedby={nameTip ? "name-tip" : undefined} />
+              {nameTip && <span className="name-tip" id="name-tip" role="alert">이름을 입력해 주세요.</span>}
             </label>
-            <button type="submit" className="go" disabled={busy || !trimmed}>{busy ? "들어가는 중…" : "입장"}</button>
+            <button type="submit" className="go" disabled={busy}>{busy ? "들어가는 중…" : "입장"}</button>
             {onCancel && <button type="button" onClick={onCancel}>취소</button>}
           </div>
           <div className="tools">
