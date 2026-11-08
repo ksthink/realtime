@@ -146,6 +146,43 @@ npm run dev
 
 > `supabase/apply-all.sql`에는 최근 마이그레이션이 빠져 있습니다. 대신 `supabase/migrations`를 적용하세요.
 
+### 접속 인원 전송 (metamoa)
+
+운영 Supabase가 10분마다(정시 기준 00분, 10분, 20분…) 현재 접속 인원을 metamoa로 보냅니다. 접속자가 없을 때도 `{"count": 0}`을 보냅니다.
+
+- **흐름:** `pg_cron` → Edge Function `live-count` → `world` 채널의 Presence 집계 → `POST https://metamoa.com/api/live/stone-ksthink-com-mw79rqk1`
+- **집계 기준:** 게임에 들어온 사람만 셉니다. 인트로 화면에 있는 사람은 빠지고, 같은 사용자가 탭을 여러 개 열어도 1명입니다. 전송 순간의 인원이며 10분간의 최대치나 평균이 아닙니다.
+- **실패할 때:** 인원을 세지 못하면 잘못된 0을 보내지 않고 그 회차를 건너뜁니다.
+- **호출 보호:** 함수 주소는 공개이므로, Vault의 `live_count_secret`을 `x-cron-secret` 헤더로 보낸 호출만 받습니다. 비밀값은 DB 안에서 생성됩니다.
+- **로컬:** cron SQL은 운영 전용이라 `supabase/migrations`에 넣지 않았습니다. 로컬 Supabase에서는 돌지 않습니다.
+
+처음 설정하는 방법입니다. `supabase/live-count-cron.sql`의 함수 주소는 운영 프로젝트로 고정되어 있으니, 다른 프로젝트에 적용하면 주소를 바꾸세요.
+
+```bash
+# 1. metamoa 키 등록 (대시보드 Edge Functions > Secrets에서 넣어도 됩니다)
+npx supabase secrets set METAMOA_KEY=<키> --project-ref <프로젝트 ref>
+
+# 2. 함수 배포 (호출 검증을 함수가 직접 하므로 --no-verify-jwt가 필요합니다)
+npx supabase functions deploy live-count --no-verify-jwt --project-ref <프로젝트 ref>
+
+# 3. Supabase SQL 편집기에서 supabase/live-count-cron.sql 내용을 실행합니다
+```
+
+운영 중 확인과 관리는 SQL 편집기에서 합니다.
+
+```sql
+-- 최근 전송 결과. content의 count가 보낸 인원, status가 metamoa 응답(204면 성공)
+select created, status_code, content, error_msg from net._http_response order by id desc limit 10;
+
+-- 등록 상태 확인
+select jobname, schedule, active from cron.job;
+
+-- 전송 멈추기
+select cron.unschedule('live-count');
+```
+
+다시 켜려면 `supabase/live-count-cron.sql`의 마지막 `cron.schedule` 문을 실행합니다.
+
 ## 명령어
 
 | 명령어 | 설명 |
