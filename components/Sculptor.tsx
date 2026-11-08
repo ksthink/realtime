@@ -64,6 +64,8 @@ const SHAPES: Record<string, { label: string; fn: (v: THREE.Vector3) => THREE.Ve
   },
 };
 
+const AUTO_SMOOTH = 0.5; // 끌 때 브러시 둘레를 다듬는 세기(0~1). 크면 뿔·귀 같은 뾰족한 모양도 무뎌진다
+
 type Api = {
   shape(name: string): void;
   smooth(): void;
@@ -135,6 +137,26 @@ function Clay({ apiRef }: { apiRef: React.MutableRefObject<Api | null> }) {
       },
     };
 
+    // 끄는 동안 브러시 둘레를 살짝 고르게 편다(이웃 꼭짓점 평균 쪽으로). 가운데만 뾰족하게 튀지 않고 찰흙처럼 둥글게 늘어난다.
+    // 한 번에 움직인 만큼만 다듬어, 제자리에서 꾹 누르고 있어도 모양이 녹아내리지 않는다
+    const near: number[] = [], avg: number[] = [];
+    const sa = new THREE.Vector3(), sb = new THREE.Vector3(), sc = new THREE.Vector3();
+    const smoothAround = (c: THREE.Vector3, r: number, k: number) => {
+      near.length = 0; avg.length = 0;
+      members.forEach((m, g) => {
+        const q = 1 - sa.fromBufferAttribute(pos, m[0]).distanceTo(c) / r;
+        if (q <= 0) return;
+        sb.set(0, 0, 0);
+        for (const n of neighbors[g]) sb.add(sc.fromBufferAttribute(pos, members[n][0]));
+        sb.divideScalar(neighbors[g].size);
+        near.push(g); avg.push(sb.x, sb.y, sb.z, q * q * (3 - 2 * q));
+      });
+      near.forEach((g, j) => {
+        sa.fromBufferAttribute(pos, members[g][0]).lerp(sb.set(avg[j * 4], avg[j * 4 + 1], avg[j * 4 + 2]), k * avg[j * 4 + 3]);
+        for (const i of members[g]) pos.setXYZ(i, sa.x, sa.y, sa.z);
+      });
+    };
+
     // 드래그: 몸통 위면 밀고 당기기, 빈 곳이면 돌리기
     const el = gl.domElement;
     const ray = new THREE.Raycaster(), plane = new THREE.Plane(), pt = new THREE.Vector3(), tmp = new THREE.Vector3();
@@ -180,6 +202,7 @@ function Clay({ apiRef }: { apiRef: React.MutableRefObject<Api | null> }) {
         tmp.setLength(clamp(L, 0.3, 1.7));
         pos.setXYZ(i, tmp.x, tmp.y, tmp.z);
       }
+      smoothAround(drag.center, R * 1.2, AUTO_SMOOTH * Math.min(1, d.length() / 0.08));
       drag.center.add(d);
       refresh();
     };
