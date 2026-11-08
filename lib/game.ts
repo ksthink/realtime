@@ -329,7 +329,7 @@ export class Game {
   // 수명이 늘어나는 건 소원을 빈 탑뿐이다(소원 없는 탑은 마지막 돌을 쌓고 10분이면 사라진다)
   private floatAt(t: TowerView) {
     if (!t.row.wish) return;
-    const sprite = floatingText("+1시간", this.font);
+    const sprite = floatingText("+3시간", this.font);
     sprite.position.set(t.row.x, t.top + 0.4, t.row.z);
     this.root.add(sprite);
     this.floaters.push({ sprite, t: 0 });
@@ -649,10 +649,10 @@ export class Game {
     this.busy = false;
     if (r.ok) {
       this.prayers.set(t.row.id, Date.now());
-      if (r.expires_at) t.row = { ...t.row, expires_at: r.expires_at };
+      if (r.expires_at) t.row = { ...t.row, expires_at: r.expires_at, ...(r.pray_count !== undefined && { pray_count: r.pray_count }) };
       this.floatAt(t);
       this.net.sendPray(t.row.id);
-      this.toast(t.row.wish ? "합장했어요. 탑의 수명이 1시간 늘었어요" : "합장했어요. 소원을 빈 탑만 수명이 늘어나요");
+      this.toast(t.row.wish ? "합장했어요. 탑의 수명이 3시간 늘었어요" : "합장했어요. 소원을 빈 탑만 수명이 늘어나요");
     } else {
       this.me.state = "idle";
       if (r.reason === "cooldown" && r.prayed_at) this.prayers.set(t.row.id, Date.parse(r.prayed_at));
@@ -972,7 +972,8 @@ export class Game {
       const left = Date.parse(t.row.expires_at) - now;
       const life = left > 0 ? formatLife(left) : "곧 사라져요";
       // 초마다 바뀌므로 보이는 라벨만 다시 그린다
-      t.label.set(t.row.owner_name, t.row.wish, t.row.wish ? life : `${this.towerName(t.row)} · ${life}`, left < 10 * 60000, mine);
+      const hearts = `♥ (${t.row.pray_count ?? 0})`; // 받은 합장 수
+      t.label.set(t.row.owner_name, t.row.wish, t.row.wish ? `${life} · ${hearts}` : `${this.towerName(t.row)} · ${life} · ${hearts}`, left < 10 * 60000, mine);
     }
 
     // 내 첫돌 표시: 멀리서도 보이는 빛기둥과, 돌을 들었을 때 쌓이는 범위

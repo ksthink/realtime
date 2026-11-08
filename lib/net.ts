@@ -10,6 +10,7 @@ export type StoneRow = {
 export type TowerRow = {
   id: string; owner_id: string | null; owner_name: string; // 소원을 빌면 owner_id가 비고, 이름만 남는다
   x: number; z: number; wish: string | null; expires_at: string;
+  pray_count?: number; // 받은 합장 수. 마이그레이션 전 서버에는 없다
 };
 export type CharacterRow = {
   user_id: string; name: string; seed: number;
@@ -17,7 +18,7 @@ export type CharacterRow = {
 };
 export type Pose = { id: string; x: number; z: number; yaw: number; m: boolean; r?: Reaction };
 export type DropResult = { result: "first" | "stacked" | "collapsed" | "discarded" | "too_close" | "full" | "rejected"; count?: number };
-export type PrayResult = { ok: boolean; reason?: "gone" | "cooldown" | "auth"; expires_at?: string; prayed_at?: string; extended?: boolean };
+export type PrayResult = { ok: boolean; reason?: "gone" | "cooldown" | "auth"; expires_at?: string; prayed_at?: string; extended?: boolean; pray_count?: number };
 
 export type NetEvents = {
   snapshot(stones: StoneRow[], towers: TowerRow[], prayers: { tower_id: string; prayed_at: string }[]): void;
@@ -81,7 +82,7 @@ export class Net {
   async resync() {
     const [stones, towers, prayers] = await Promise.all([
       this.db.from("stones").select("id,seed,radius,height,state,holder_id,tower_id,order_index,x,z,expires_at").limit(1000),
-      this.db.from("towers").select("id,owner_id,owner_name,x,z,wish,expires_at").limit(1000),
+      this.db.from("towers").select("*").limit(1000), // 열 이름을 적지 않아 pray_count 마이그레이션 전 서버에서도 읽힌다
       this.db.from("prayers").select("tower_id,prayed_at").eq("user_id", this.uid),
     ]);
     if (stones.error || towers.error || prayers.error) {
