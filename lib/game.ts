@@ -28,7 +28,7 @@ export type WishPrompt = "ready" | "max";
 
 export type HudState = {
   online: boolean; people: number; towers: number;
-  myStones: number; myMinutes: number | null; myLife: string; wishPrompt: WishPrompt | null; firstStoneAsk: boolean; dropAsk: boolean; towerAsk: boolean;
+  myStones: number; myMinutes: number | null; myLife: string; wishPrompt: WishPrompt | null; firstStoneAsk: boolean; towerAsk: boolean;
   carrying: boolean; prompt: string; action: "first" | "stack" | "discard" | "blocked" | "pick" | "pray" | null; dropKind: "first" | "stack" | "discard" | "blocked" | null;
   canPray: boolean; prayWait: number; canWish: boolean; cam: string; toastId: number; toast: string;
 };
@@ -106,10 +106,10 @@ export class Game {
   inputLocked = false;
   private wishPrompt: WishPrompt | null = null;
   private firstStoneAsk = false;
-  private dropAsk: { x: number; z: number } | null = null; // 탑이 없을 때 탭한 자리에 첫돌을 놓을지 묻는 중
   private towerAsk = false; // 빛기둥을 눌러 내 탑으로 갈지 묻는 중
-  // 탭으로 걸어가는 곳. stone이면 닿았을 때 그 돌을 줍고, drop이면 그 자리를 바라보고 돌을 놓는다
-  private walkTo: { x: number; z: number; stone?: StoneView; drop?: boolean; reach?: number; best?: number; stuck: number; path?: PathPoint[] } | null = null;
+  // 탭으로 걸어가는 곳. stone이면 닿았을 때 그 돌을 줍고, face면 그 자리를 바라보고 선다.
+  // 돌을 내려놓는 건 탭으로 하지 않는다(놓기 버튼·키로만). 걷다 멈춘 곳과 놓는 곳이 겹쳐 헷갈리지 않게
+  private walkTo: { x: number; z: number; stone?: StoneView; face?: boolean; reach?: number; best?: number; stuck: number; path?: PathPoint[] } | null = null;
   private paths = makePathfinder((x, z) => !blocked(x, z) && !sunken(x, z));
   private ray = new THREE.Raycaster();
   private pickTarget: StoneView | null = null;
@@ -479,21 +479,8 @@ export class Game {
     }
     const pt = stone ? { x: stone.mesh.position.x, z: stone.mesh.position.z } : ground;
     if (!pt) return;
-    const mine = this.myTower;
-    if (held && !mine) {
-      const why = this.cantDropAt(pt.x, pt.z);
-      if (why) { this.toast(why); return; }
-      this.rippleAt(pt.x, pt.z);
-      this.walkTo = null;
-      this.dropAsk = { x: pt.x, z: pt.z };
-      this.inputLocked = true;
-      this.releaseKeys();
-      return;
-    }
     this.rippleAt(pt.x, pt.z);
-    if (held && mine && Math.hypot(mine.row.x - pt.x, mine.row.z - pt.z) <= STACK_RADIUS) {
-      this.walkTo = { x: mine.row.x, z: mine.row.z, drop: true, stuck: 0 };
-    } else this.walkTo = { x: pt.x, z: pt.z, stuck: 0 };
+    this.walkTo = { x: pt.x, z: pt.z, stuck: 0 };
   }
   // 광선에 맞은 가장 앞의 돌. 언덕 너머에 가려진 돌은 맞힌 것으로 치지 않는다
   private stoneHit(ground: { t: number } | null) {
@@ -528,7 +515,8 @@ export class Game {
     if (!mine || !this.canTapWalk) return;
     const { x, z } = mine.row;
     this.rippleAt(x, z);
-    this.walkTo = this.myHeld ? { x, z, drop: true, stuck: 0 } : { x, z, reach: 1.2, stuck: 0 };
+    // 탑을 바라보고 서므로, 돌을 들고 왔으면 바로 놓기(E)로 쌓을 수 있다
+    this.walkTo = { x, z, reach: 1.2, face: true, stuck: 0 };
   }
   // 광선이 기둥 축에서 보이는 굵기의 1.5배 안으로 지나가면 맞힌 것으로 본다(굵기는 멀수록 커지므로 먼 기둥도 누르기 쉽다).
   // 땅에 먼저 닿는 광선(기둥 앞의 땅)과 밑동 1m는 땅을 탭한 것으로 둔다(탑 옆 땅을 눌러 그리로 걸어갈 수 있게)
@@ -562,19 +550,6 @@ export class Game {
     const mine = this.myTower;
     return !!mine && v.row.state === "stacked" && v.row.tower_id === mine.row.id && this.towerStoneCount(mine.row.id) === 1;
   }
-  private cantDropAt(x: number, z: number) {
-    if (isWater(x, z) || sunken(x, z) || hillBlocked(x, z) || onStairs(x, z) || Math.hypot(x, z) >= WORLD) return "여기에는 돌을 놓을 수 없어요";
-    for (const t of this.towers.values()) if (Math.hypot(t.row.x - x, t.row.z - z) < TOWER_GAP) return "다른 탑과 너무 가까워요";
-    return null;
-  }
-  // [네]: 그 자리로 걸어가 첫돌을 놓는다. [아니요]: 아무것도 하지 않는다
-  answerDropAsk(yes: boolean) {
-    const at = this.dropAsk;
-    this.dropAsk = null;
-    this.inputLocked = false;
-    if (yes && at && this.myHeld) this.walkTo = { ...at, drop: true, stuck: 0 };
-  }
-
   // [네]: 내 탑으로 걸어간다. [아니요]·창 바깥: 그냥 닫는다
   answerTowerAsk(yes: boolean) {
     this.towerAsk = false;
@@ -595,13 +570,13 @@ export class Game {
     this.walkTo = null; // 버튼·키로 직접 하면 탭으로 가던 길은 그만둔다
     return this.act();
   }
-  // target: 탭해서 고른 돌. 없으면 가까운 돌(pickTarget)을 줍는다. at: 탭해서 고른 놓을 자리. 없으면 0.7m 앞(dropPoint)
-  private async act(target?: StoneView, at?: { x: number; z: number }) {
+  // target: 탭해서 고른 돌. 없으면 가까운 돌(pickTarget)을 줍는다
+  private async act(target?: StoneView) {
     if (this.busy || this.me.state === "pickup" || this.me.state === "place") return;
     this.busy = true;
     try {
       const held = this.myHeld;
-      if (held) await this.drop(held, at);
+      if (held) await this.drop(held);
       else await this.pick(target);
     } finally {
       this.busy = false;
@@ -629,9 +604,9 @@ export class Game {
     }
   }
 
-  private async drop(held: StoneView, at?: { x: number; z: number }) {
-    const { x, z } = at ?? this.dropPoint(), p = this.me.g.position;
-    if (onStairs(p.x, p.z) || onStairs(x, z)) { this.toast("계단에서는 돌을 놓을 수 없어요"); return; }
+  private async drop(held: StoneView) {
+    if (this.onStairs) { this.toast("계단에서는 돌을 놓을 수 없어요"); return; }
+    const { x, z } = this.dropPoint();
     this.me.state = "place"; this.me.stateT = 0;
     const r = await this.net.dropStone(held.row.id, x, z);
     this.onDropResult(r);
@@ -687,7 +662,7 @@ export class Game {
     const t = this.myTower;
     return !!t && this.towerStoneCount(t.row.id) >= WISH_AT;
   }
-  get askOpen() { return !!this.wishPrompt || this.firstStoneAsk || !!this.dropAsk || this.towerAsk; }
+  get askOpen() { return !!this.wishPrompt || this.firstStoneAsk || this.towerAsk; }
   closeWishPrompt() {
     this.wishPrompt = null;
     this.inputLocked = false;
@@ -827,7 +802,7 @@ export class Game {
     this.frameDt = dt;
     const w = this.walkTo!, me = this.me, p = me.g.position, held = this.myHeld;
     // 가는 사이 돌을 누가 집었거나, 들고 있던 돌이 없어졌으면 그만둔다
-    if (w.stone ? held || !this.pickable(w.stone) : w.drop && !held) { this.walkTo = null; return false; }
+    if (w.stone && (held || !this.pickable(w.stone))) { this.walkTo = null; return false; }
     const tx = w.stone ? w.stone.row.x : w.x, tz = w.stone ? w.stone.row.z : w.z;
     // 처음 한 번 강·비탈을 돌아가는 길을 찾고, 꺾이는 곳을 하나씩 지나간다. 마지막 점은 목표 자리다
     w.path ??= this.paths.find(p.x, p.z, tx, tz).pts;
@@ -839,14 +814,13 @@ export class Game {
       return moved > 0;
     }
     const dir = new THREE.Vector3(tx - p.x, 0, tz - p.z), d = dir.length();
-    const reach = w.reach ?? (w.stone ? 1.2 : w.drop ? 0.7 : 0.1); // 줍기는 PICK_RANGE보다 조금 안쪽까지 가야 확실히 닿는다
+    const reach = w.reach ?? (w.stone ? 1.2 : 0.1); // 줍기는 PICK_RANGE보다 조금 안쪽까지 가야 확실히 닿는다
     if (d <= reach) {
       this.walkTo = null;
-      if ((w.drop || w.stone) && d > 0.05) me.yaw = Math.atan2(tx - p.x, tz - p.z); // 곧바로 돌아서 바라본다
-      if (!w.drop && !w.stone) return false;
+      if ((w.face || w.stone) && d > 0.05) me.yaw = Math.atan2(tx - p.x, tz - p.z); // 곧바로 돌아서 바라본다
+      if (!w.stone) return false;
       if (this.busy) return false; // 다른 일(합장 등)을 하는 중이면 조용히 그만둔다
-      // 놓는 자리는 바라보는 방향과 상관없이 탭한 곳(탑이면 탑 가운데)이다. 너무 가까이 서 있어도 그 자리에 놓인다
-      void (w.stone ? this.act(w.stone) : this.act(undefined, { x: tx, z: tz }));
+      void this.act(w.stone);
       return false;
     }
     const moved = this.walk(dir.divideScalar(d), Math.min((me.carrying ? 3 : 4) * dt, d - reach + 0.02), dt);
@@ -858,7 +832,7 @@ export class Game {
     if (left < (w.best ?? Infinity) - 0.05) { w.best = left; w.stuck = 0; }
     else if ((w.stuck += this.frameDt) > 0.5) {
       this.walkTo = null;
-      if (w.drop || w.stone) this.toast("거기까지 갈 수 없어요");
+      if (w.stone) this.toast("거기까지 갈 수 없어요");
     }
   }
   private frameDt = 0;
@@ -1154,7 +1128,7 @@ export class Game {
       myStones: mine ? this.towerStoneCount(mine.row.id) : 0,
       myMinutes: mine ? Math.ceil((Date.parse(mine.row.expires_at) - Date.now()) / 60000) : null,
       myLife: mine ? formatLife(Date.parse(mine.row.expires_at) - Date.now()) : "",
-      wishPrompt: this.wishPrompt, firstStoneAsk: this.firstStoneAsk, dropAsk: !!this.dropAsk, towerAsk: this.towerAsk,
+      wishPrompt: this.wishPrompt, firstStoneAsk: this.firstStoneAsk, towerAsk: this.towerAsk,
       carrying: !!this.myHeld, prompt, action, dropKind: kind,
       canPray: !!near, prayWait: near ? Math.ceil(this.prayWait(near.row.id) / 60000) : 0,
       canWish: this.canWishHere, cam: CAMS[this.camMode],

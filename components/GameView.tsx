@@ -104,7 +104,7 @@ function Scene({ onGame, db, me, font, start }: { onGame(g: Game | null): void; 
 }
 
 const EMPTY: HudState = {
-  online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myLife: "", wishPrompt: null, firstStoneAsk: false, dropAsk: false, towerAsk: false, carrying: false,
+  online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myLife: "", wishPrompt: null, firstStoneAsk: false, towerAsk: false, carrying: false,
   prompt: "", action: null, dropKind: null, canPray: false, prayWait: 0, canWish: false, cam: "따라가기", toastId: 0, toast: "",
 };
 
@@ -121,7 +121,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   const wishAskRef = useRef<HTMLDivElement>(null);
 
   // 버튼이 아니라 창에 포커스를 준다. 돌을 놓느라 누른 스페이스가 뗄 때 버튼을 눌러 버리지 않게 한다
-  useEffect(() => { if (hud.wishPrompt || hud.firstStoneAsk || hud.dropAsk || hud.towerAsk) wishAskRef.current?.focus(); }, [hud.wishPrompt, hud.firstStoneAsk, hud.dropAsk, hud.towerAsk]);
+  useEffect(() => { if (hud.wishPrompt || hud.firstStoneAsk || hud.towerAsk) wishAskRef.current?.focus(); }, [hud.wishPrompt, hud.firstStoneAsk, hud.towerAsk]);
 
   // HUD 폴링: 프레임마다 React를 돌리지 않는다
   useEffect(() => {
@@ -185,11 +185,6 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   const answerTowerAsk = (yes: boolean) => {
     if (!game) return;
     game.answerTowerAsk(yes);
-    setHud(game.hud());
-  };
-  const answerDropAsk = (yes: boolean) => {
-    if (!game) return;
-    game.answerDropAsk(yes);
     setHud(game.hud());
   };
   const submitWish = async (e: FormEvent) => {
@@ -298,7 +293,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
               <div className="only-key"><dt>클릭</dt><dd>땅을 클릭하면 그곳으로 걸어갑니다. 돌을 클릭하면 줍습니다</dd></div>
               <div className="only-touch"><dt>탭</dt><dd>땅을 탭하면 그곳으로 걸어갑니다. 돌을 탭하면 줍습니다</dd></div>
               <div><dt><DragIcon /></dt><dd>화면을 드래그해 카메라 돌리기</dd></div>
-              <div><dt><PickIcon /><kbd className="only-key">E</kbd></dt><dd>줍기/놓기. 내 첫돌 근처에 놓아야 쌓입니다. 돌을 든 채 땅을 누르면 첫 돌은 여기 내릴지 묻고, 그다음부터는 내 탑을 누르면 알아서 올립니다</dd></div>
+              <div><dt><PickIcon /><kbd className="only-key">E</kbd></dt><dd>줍기/놓기. 내 첫돌 근처에 놓아야 쌓입니다. 돌은 놓기 버튼이나 키로만 내려놓습니다</dd></div>
               <div><dt><PrayIcon /><kbd className="only-key">Q</kbd></dt><dd>합장. 탑 옆에서 하면 수명이 1시간 늘어납니다</dd></div>
               <div><dt><WishIcon /><kbd className="only-key">F</kbd></dt><dd>내 탑이 {WISH_AT}단이 되면 소원 적기</dd></div>
               <div><dt><CameraIcon /><kbd className="only-key">C</kbd></dt><dd>뷰 전환</dd></div>
@@ -334,18 +329,6 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
             <div className="row">
               <button type="button" className="go" onClick={() => answerFirstStone(true)}>네</button>
               <button type="button" onClick={() => answerFirstStone(false)}>아니요</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {hud.dropAsk && (
-        <div className="help-back">
-          <div className="wish" ref={wishAskRef} tabIndex={-1} role="alertdialog" aria-modal="true" aria-describedby="drop-ask">
-            <p id="drop-ask" className="ask">여기에 돌을 내릴까요?</p>
-            <div className="row">
-              <button type="button" className="go" onClick={() => answerDropAsk(true)}>네</button>
-              <button type="button" onClick={() => answerDropAsk(false)}>아니요</button>
             </div>
           </div>
         </div>
