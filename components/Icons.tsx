@@ -129,6 +129,14 @@ export const SadIcon = (p: Props) => (
   </Svg>
 );
 
+export const SpeakerIcon = (p: Props) => (
+  <Svg {...p}>
+    <path d="M3 9.5v5c0 .6.4 1 1 1h3.4l4.9 4c.7.5 1.7.1 1.7-.8V5.3c0-.9-1-1.3-1.7-.8l-4.9 4H4c-.6 0-1 .4-1 1Z" />
+    <path d="M16.5 8.2a5.3 5.3 0 0 1 0 7.6l-1.2-1.2a3.6 3.6 0 0 0 0-5.2l1.2-1.2Z" />
+    <path d="M19 5.7a8.8 8.8 0 0 1 0 12.6l-1.2-1.2a7.1 7.1 0 0 0 0-10.2L19 5.7Z" />
+  </Svg>
+);
+
 export const CloseIcon = (p: Props) => (
   <Svg {...p}>
     <path d="m6 4 6 6 6-6 2 2-6 6 6 6-2 2-6-6-6 6-2-2 6-6-6-6 2-2Z" />

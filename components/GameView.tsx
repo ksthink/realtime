@@ -7,8 +7,8 @@ import * as THREE from "three";
 import { Game, type HudState, type PlayerSpot, type WishPrompt } from "@/lib/game";
 import { type CharacterRow, Net } from "@/lib/net";
 import { MAX_STONES, WISH_AT, WISH_MAX } from "@/lib/rules";
-import { soundDebug, startSound } from "@/lib/sound";
-import { CameraIcon, CloseIcon, DiscardIcon, DragIcon, FirstStoneIcon, JoyIcon, PersonIcon, PickIcon, PrayIcon, RestIcon, SadIcon, SculptIcon, StackIcon, TowerIcon, WaveIcon, WishIcon } from "./Icons";
+import { getSoundSettings, setSoundSettings, soundDebug, startSound, type SoundSettings } from "@/lib/sound";
+import { CameraIcon, CloseIcon, DiscardIcon, DragIcon, FirstStoneIcon, JoyIcon, PersonIcon, PickIcon, PrayIcon, RestIcon, SadIcon, SculptIcon, SpeakerIcon, StackIcon, TowerIcon, WaveIcon, WishIcon } from "./Icons";
 
 const TOAST_MS = 5000;
 const TAP_SLOP = 8; // 이만큼(px) 움직이기 전에 손을 떼면 탭으로 본다
@@ -108,6 +108,37 @@ const EMPTY: HudState = {
   prompt: "", action: null, dropKind: null, canPray: false, prayWait: 0, canWish: false, wishNear: false, cam: "따라가기", toastId: 0, toast: "",
 };
 
+const SOUND_ROWS: { key: "bgm" | "sfx"; label: string }[] = [
+  { key: "bgm", label: "배경음" },
+  { key: "sfx", label: "효과음" },
+];
+
+// [확인]을 눌러야 적용된다. 바깥을 누르거나 Esc로 닫으면 바꾼 내용은 버린다
+function SoundDialog({ onClose }: { onClose(): void }) {
+  const [draft, setDraft] = useState(getSoundSettings);
+  return (
+    <div className="help-back" onClick={onClose}>
+      <div className="help sound" role="dialog" aria-modal="true" aria-label="소리 설정" onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") onClose(); }}>
+        <div className="help-head"><h2>소리</h2></div>
+        {SOUND_ROWS.map(({ key, label }, i) => (
+          <div className="sound-row" key={key}>
+            <span>{label}</span>
+            {key === "bgm" && (
+              <div className="sound-volume">
+                <input type="range" min={50} max={100} step={5} value={Math.round(draft.bgmVolume * 100)} aria-label="배경음 볼륨" onChange={(e) => setDraft({ ...draft, bgmVolume: Number(e.target.value) / 100 })} />
+                <span>{Math.round(draft.bgmVolume * 100)}%</span>
+              </div>
+            )}
+            <button type="button" role="switch" aria-checked={draft[key]} aria-label={label} autoFocus={i === 0} onClick={() => setDraft({ ...draft, [key]: !draft[key] })}>{draft[key] ? "켬" : "끔"}</button>
+          </div>
+        ))}
+        <button type="button" className="sound-ok" onClick={() => { setSoundSettings(draft); onClose(); }}>확인</button>
+      </div>
+    </div>
+  );
+}
+
 export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClient; me: CharacterRow; font: string; start?: PlayerSpot; onResculpt(at: PlayerSpot): void }) {
   const [game, setGame] = useState<Game | null>(null);
   const [hud, setHud] = useState(EMPTY);
@@ -116,6 +147,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   const [wish, setWish] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [soundOpen, setSoundOpen] = useState(false);
   const statsRef = useRef<HTMLPreElement>(null);
   const markerRef = useRef<HTMLDivElement>(null);
   const wishAskRef = useRef<HTMLDivElement>(null);
@@ -214,7 +246,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
       if (e.code === "KeyQ") void game.prayAction();
       if (e.code === "KeyC") game.cycleCam();
       if (e.code === "KeyF") { e.preventDefault(); openWish(); }
-      if (e.code === "Escape") setHelpOpen(false);
+      if (e.code === "Escape") { setHelpOpen(false); setSoundOpen(false); }
     };
     const up = (e: KeyboardEvent) => game.setKey(e.code, false);
     const blur = () => game.releaseKeys();
@@ -244,6 +276,8 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
         )}
       </div>
       <div className="hud tr keys">
+        {/* 마우스로 눌러도 포커스를 가져가지 않는다. 팝업을 닫은 뒤 스페이스(줍기)로 다시 열리지 않게 */}
+        <button type="button" className="chip key icon link only-key" onMouseDown={(e) => e.preventDefault()} onClick={() => setSoundOpen(true)} aria-label="소리 설정" title="소리 설정"><SpeakerIcon /></button>
         <button type="button" className="chip key icon link" onClick={() => game?.cycleCam()} aria-label={`뷰 바꾸기, 지금은 ${hud.cam}`} title="뷰 바꾸기 (C)"><CameraIcon /></button>
         <button type="button" className="chip key icon link" onClick={() => { if (game) onResculpt(game.spot); }} aria-label="캐릭터 다시 빚기" title="캐릭터 다시 빚기"><SculptIcon /></button>
       </div>
@@ -272,6 +306,8 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
       </div>
 
       <button type="button" className="chip help-btn" onClick={() => setHelpOpen(true)} aria-label="조작 방법 보기">?</button>
+
+      {soundOpen && <SoundDialog onClose={() => setSoundOpen(false)} />}
 
       {helpOpen && (
         <div className="help-back" onClick={() => setHelpOpen(false)}>

@@ -21,8 +21,32 @@ const SQUISH_END_MS = 300; // 소리가 줄어든 뒤 재생을 끝낼 때까지
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
+let bgmBus: GainNode | null = null, sfxBus: GainNode | null = null;
 let loading: Promise<void> | null = null;
 const buffers: Partial<Record<Name, AudioBuffer>> = {};
+
+// 소리 설정. bgmVolume은 배경음 크기(0.5~1)
+export type SoundSettings = { bgm: boolean; sfx: boolean; bgmVolume: number };
+const SETTINGS_KEY = "doltap-sound";
+const DEFAULT_SETTINGS: SoundSettings = { bgm: true, sfx: true, bgmVolume: 1 };
+let settings = readSettings();
+
+function readSettings(): SoundSettings {
+  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") }; } catch { return DEFAULT_SETTINGS; }
+}
+
+function applySettings() {
+  if (bgmBus) bgmBus.gain.value = settings.bgm ? settings.bgmVolume : 0;
+  if (sfxBus) sfxBus.gain.value = settings.sfx ? 1 : 0;
+}
+
+export const getSoundSettings = () => settings;
+
+export function setSoundSettings(next: SoundSettings) {
+  settings = next;
+  applySettings();
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch { /* 저장을 못 해도 지금 접속에는 적용된다 */ }
+}
 
 let running = false;
 let loops: AudioBufferSourceNode[] = [];
@@ -71,6 +95,11 @@ export function unlockSound() {
   // 소리가 겹쳐도 찢어지지 않게 마지막에 압축기를 둔다
   const limiter = ctx.createDynamicsCompressor();
   master.connect(limiter).connect(ctx.destination);
+  bgmBus = ctx.createGain();
+  sfxBus = ctx.createGain();
+  bgmBus.connect(master);
+  sfxBus.connect(master);
+  applySettings();
   document.addEventListener("visibilitychange", onVisibility);
   void ctx.resume();
   void load();
@@ -79,7 +108,7 @@ export function unlockSound() {
 function loop(name: Name, gain: number) {
   const g = ctx!.createGain();
   g.gain.value = gain;
-  g.connect(master!);
+  g.connect(bgmBus!);
   const s = ctx!.createBufferSource();
   s.buffer = buffers[name]!;
   s.loop = true;
@@ -103,7 +132,7 @@ function one(name: Name) {
   if (!ctx || !master || !buf) return;
   const g = ctx.createGain();
   g.gain.value = LEVEL[name];
-  g.connect(master);
+  g.connect(name === "spool" ? bgmBus! : sfxBus!);
   const s = ctx.createBufferSource();
   s.buffer = buf;
   s.connect(g);
@@ -153,7 +182,7 @@ export function playStep() {
   const gain = ctx.createGain();
   gain.gain.setValueAtTime(slice.gain * LEVEL.step * level, now);
   gain.gain.setTargetAtTime(0, now + length - 0.07, 0.02); // 끝이 끊기지 않게 살짝 줄인다
-  gain.connect(master);
+  gain.connect(sfxBus!);
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.playbackRate.value = rate;
@@ -181,7 +210,7 @@ export function playSquish(speed: number) {
   if (!squishNode) {
     const gain = ctx.createGain();
     gain.gain.value = 0;
-    gain.connect(master);
+    gain.connect(sfxBus!);
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.loop = true;
@@ -212,5 +241,6 @@ export function stopSquish() {
 
 export const soundDebug = () => ({
   state: ctx?.state ?? null, loaded: Object.keys(buffers).length, loops: loops.length, running,
+  bgm: bgmBus?.gain.value ?? null, sfx: sfxBus?.gain.value ?? null,
   water: waterGain?.gain.value ?? null, steps: stepCount, drops: dropCount, stepping: !!stepNode,
 });
