@@ -111,7 +111,6 @@ export function Intro({ db, onEnter }: { db: SupabaseClient; onEnter(): void }) 
       </div>
       <main className="intro-front">
         <h1 aria-label={TITLE.join(" ")}>{TITLE.map((phrase, p) => <WaveText key={p} text={phrase} start={p === 0 ? 0 : TITLE[0].length} />)}</h1>
-        <p role="img" aria-label={people === null ? `정원 ${MAX_PEOPLE}명` : `현재 접속 ${people}명, 정원 ${MAX_PEOPLE}명`}>{people ?? "–"} / {MAX_PEOPLE}</p>
         <button type="button" disabled={full} onClick={() => { unlockSound(); void enter(); }}>{full ? "정원이 찼어요" : "입장"}</button>
         <a className="intro-credit" href="https://metaphr.dev" target="_blank" rel="noopener noreferrer">© metaphr.dev</a>
       </main>
