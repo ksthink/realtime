@@ -515,7 +515,7 @@ export class Game {
     if (!mine || !this.canTapWalk) return;
     const { x, z } = mine.row;
     this.rippleAt(x, z);
-    // 탑을 바라보고 서므로, 돌을 들고 왔으면 바로 놓기(E)로 쌓을 수 있다
+    // 탑을 바라보고 서므로, 돌을 들고 왔으면 바로 놓기(Space)로 쌓을 수 있다
     this.walkTo = { x, z, reach: 1.2, face: true, stuck: 0 };
   }
   // 광선이 기둥 축에서 보이는 굵기의 1.5배 안으로 지나가면 맞힌 것으로 본다(굵기는 멀수록 커지므로 먼 기둥도 누르기 쉽다).
@@ -1114,12 +1114,12 @@ export class Game {
     const redoFirst = !kind && this.pickTarget?.row.state === "stacked";
     const stone = !kind && this.pickTarget?.row.state === "ground";
     const prompt =
-      kind === "first" ? "여기에 첫돌 놓기 (E)"
-      : kind === "stack" ? "내 탑에 쌓기 (E)"
-      : kind === "discard" ? "여기서 놓으면 버려져요 (E)"
-      : kind === "blocked" ? "다른 탑과 너무 가까워요 (E)"
-      : redoFirst ? "첫 돌 다시 들기 (E)"
-      : stone ? "돌 줍기 (E)"
+      kind === "first" ? "여기에 첫돌 놓기 (Space)"
+      : kind === "stack" ? "내 탑에 쌓기 (Space)"
+      : kind === "discard" ? "여기서 놓으면 버려져요 (Space)"
+      : kind === "blocked" ? "다른 탑과 너무 가까워요 (Space)"
+      : redoFirst ? "첫 돌 다시 들기 (Space)"
+      : stone ? "돌 줍기 (Space)"
       : near ? `${this.towerName(near.row)}에 합장하기 (Q)`
       : "";
     const action = kind ?? (redoFirst || stone ? "pick" : near ? "pray" : null);

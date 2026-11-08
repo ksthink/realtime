@@ -14,11 +14,11 @@ const TOAST_MS = 5000;
 const TAP_SLOP = 8; // 이만큼(px) 움직이기 전에 손을 떼면 탭으로 본다
 
 const ACTIONS = {
-  pick: { icon: PickIcon, key: "E" },
-  first: { icon: FirstStoneIcon, key: "E" },
-  stack: { icon: StackIcon, key: "E" },
-  discard: { icon: DiscardIcon, key: "E" },
-  blocked: { icon: DiscardIcon, key: "E" },
+  pick: { icon: PickIcon, key: "Space" },
+  first: { icon: FirstStoneIcon, key: "Space" },
+  stack: { icon: StackIcon, key: "Space" },
+  discard: { icon: DiscardIcon, key: "Space" },
+  blocked: { icon: DiscardIcon, key: "Space" },
   pray: { icon: PrayIcon, key: "Q" },
 };
 
@@ -250,7 +250,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
       </div>
       <div className="hud tr keys">
         <div className="chip key dpad" role="img" aria-label="W A S D 키로 이동"><kbd className="up">W</kbd><kbd className="left">A</kbd><kbd className="down">S</kbd><kbd className="right">D</kbd></div>
-        <div className="chip key icon" role="img" aria-label="E 키로 돌 줍기, 놓기"><kbd>E</kbd><PickIcon /></div>
+        <div className="chip key icon" role="img" aria-label="스페이스 키로 돌 줍기, 놓기"><kbd>Space</kbd><PickIcon /></div>
         <div className="chip key icon" role="img" aria-label="Q 키로 합장"><kbd>Q</kbd><PrayIcon /></div>
         <div className="chip key icon" role="img" aria-label={`C 키로 뷰 전환, 지금은 ${hud.cam}`}><kbd>C</kbd><CameraIcon /></div>
         <button type="button" className="chip key icon link" onClick={() => { if (game) onResculpt(game.spot); }} aria-label="캐릭터 다시 빚기" title="캐릭터 다시 빚기"><SculptIcon /></button>
@@ -293,7 +293,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
               <div className="only-key"><dt>클릭</dt><dd>땅을 클릭하면 그곳으로 걸어갑니다. 돌을 클릭하면 줍습니다</dd></div>
               <div className="only-touch"><dt>탭</dt><dd>땅을 탭하면 그곳으로 걸어갑니다. 돌을 탭하면 줍습니다</dd></div>
               <div><dt><DragIcon /></dt><dd>화면을 드래그해 카메라 돌리기</dd></div>
-              <div><dt><PickIcon /><kbd className="only-key">E</kbd></dt><dd>줍기/놓기. 내 첫돌 근처에 놓아야 쌓입니다. 돌은 놓기 버튼이나 키로만 내려놓습니다</dd></div>
+              <div><dt><PickIcon /><kbd className="only-key">Space</kbd></dt><dd>줍기/놓기. 내 첫돌 근처에 놓아야 쌓입니다. 돌은 놓기 버튼이나 키로만 내려놓습니다</dd></div>
               <div><dt><PrayIcon /><kbd className="only-key">Q</kbd></dt><dd>합장. 탑 옆에서 하면 수명이 1시간 늘어납니다</dd></div>
               <div><dt><WishIcon /><kbd className="only-key">F</kbd></dt><dd>내 탑이 {WISH_AT}단이 되면 소원 적기</dd></div>
               <div><dt><CameraIcon /><kbd className="only-key">C</kbd></dt><dd>뷰 전환</dd></div>
