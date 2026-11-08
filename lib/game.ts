@@ -28,7 +28,7 @@ export type WishPrompt = "ready" | "max";
 
 export type HudState = {
   online: boolean; people: number; towers: number;
-  myStones: number; myMinutes: number | null; myLife: string; wishPrompt: WishPrompt | null; firstStoneAsk: boolean; dropAsk: boolean;
+  myStones: number; myMinutes: number | null; myLife: string; wishPrompt: WishPrompt | null; firstStoneAsk: boolean; dropAsk: boolean; towerAsk: boolean;
   carrying: boolean; prompt: string; action: "first" | "stack" | "discard" | "blocked" | "pick" | "pray" | null; dropKind: "first" | "stack" | "discard" | "blocked" | null;
   canPray: boolean; prayWait: number; canWish: boolean; cam: string; toastId: number; toast: string;
 };
@@ -107,6 +107,7 @@ export class Game {
   private wishPrompt: WishPrompt | null = null;
   private firstStoneAsk = false;
   private dropAsk: { x: number; z: number } | null = null; // 탑이 없을 때 탭한 자리에 첫돌을 놓을지 묻는 중
+  private towerAsk = false; // 빛기둥을 눌러 내 탑으로 갈지 묻는 중
   // 탭으로 걸어가는 곳. stone이면 닿았을 때 그 돌을 줍고, drop이면 그 자리를 바라보고 돌을 놓는다
   private walkTo: { x: number; z: number; stone?: StoneView; drop?: boolean; reach?: number; best?: number; stuck: number; path?: PathPoint[] } | null = null;
   private paths = makePathfinder((x, z) => !blocked(x, z) && !sunken(x, z));
@@ -469,7 +470,13 @@ export class Game {
       this.rippleAt(stone.row.x, stone.row.z);
       return;
     }
-    if (!stone && this.beaconHit(ground?.t ?? Infinity)) { this.goToMyTower(); return; }
+    if (!stone && this.beaconHit(ground?.t ?? Infinity)) {
+      this.walkTo = null;
+      this.towerAsk = true;
+      this.inputLocked = true;
+      this.releaseKeys();
+      return;
+    }
     const pt = stone ? { x: stone.mesh.position.x, z: stone.mesh.position.z } : ground;
     if (!pt) return;
     const mine = this.myTower;
@@ -566,6 +573,13 @@ export class Game {
     this.dropAsk = null;
     this.inputLocked = false;
     if (yes && at && this.myHeld) this.walkTo = { ...at, drop: true, stuck: 0 };
+  }
+
+  // [네]: 내 탑으로 걸어간다. [아니요]·창 바깥: 그냥 닫는다
+  answerTowerAsk(yes: boolean) {
+    this.towerAsk = false;
+    this.inputLocked = false;
+    if (yes) this.goToMyTower();
   }
 
   react(kind: Reaction) {
@@ -673,7 +687,7 @@ export class Game {
     const t = this.myTower;
     return !!t && this.towerStoneCount(t.row.id) >= WISH_AT;
   }
-  get askOpen() { return !!this.wishPrompt || this.firstStoneAsk || !!this.dropAsk; }
+  get askOpen() { return !!this.wishPrompt || this.firstStoneAsk || !!this.dropAsk || this.towerAsk; }
   closeWishPrompt() {
     this.wishPrompt = null;
     this.inputLocked = false;
@@ -1140,7 +1154,7 @@ export class Game {
       myStones: mine ? this.towerStoneCount(mine.row.id) : 0,
       myMinutes: mine ? Math.ceil((Date.parse(mine.row.expires_at) - Date.now()) / 60000) : null,
       myLife: mine ? formatLife(Date.parse(mine.row.expires_at) - Date.now()) : "",
-      wishPrompt: this.wishPrompt, firstStoneAsk: this.firstStoneAsk, dropAsk: !!this.dropAsk,
+      wishPrompt: this.wishPrompt, firstStoneAsk: this.firstStoneAsk, dropAsk: !!this.dropAsk, towerAsk: this.towerAsk,
       carrying: !!this.myHeld, prompt, action, dropKind: kind,
       canPray: !!near, prayWait: near ? Math.ceil(this.prayWait(near.row.id) / 60000) : 0,
       canWish: this.canWishHere, cam: CAMS[this.camMode],

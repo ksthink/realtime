@@ -104,7 +104,7 @@ function Scene({ onGame, db, me, font, start }: { onGame(g: Game | null): void; 
 }
 
 const EMPTY: HudState = {
-  online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myLife: "", wishPrompt: null, firstStoneAsk: false, dropAsk: false, carrying: false,
+  online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myLife: "", wishPrompt: null, firstStoneAsk: false, dropAsk: false, towerAsk: false, carrying: false,
   prompt: "", action: null, dropKind: null, canPray: false, prayWait: 0, canWish: false, cam: "따라가기", toastId: 0, toast: "",
 };
 
@@ -121,7 +121,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   const wishAskRef = useRef<HTMLDivElement>(null);
 
   // 버튼이 아니라 창에 포커스를 준다. 돌을 놓느라 누른 스페이스가 뗄 때 버튼을 눌러 버리지 않게 한다
-  useEffect(() => { if (hud.wishPrompt || hud.firstStoneAsk || hud.dropAsk) wishAskRef.current?.focus(); }, [hud.wishPrompt, hud.firstStoneAsk, hud.dropAsk]);
+  useEffect(() => { if (hud.wishPrompt || hud.firstStoneAsk || hud.dropAsk || hud.towerAsk) wishAskRef.current?.focus(); }, [hud.wishPrompt, hud.firstStoneAsk, hud.dropAsk, hud.towerAsk]);
 
   // HUD 폴링: 프레임마다 React를 돌리지 않는다
   useEffect(() => {
@@ -180,6 +180,11 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
   const answerFirstStone = (release: boolean) => {
     if (!game) return;
     void game.answerFirstStone(release);
+    setHud(game.hud());
+  };
+  const answerTowerAsk = (yes: boolean) => {
+    if (!game) return;
+    game.answerTowerAsk(yes);
     setHud(game.hud());
   };
   const answerDropAsk = (yes: boolean) => {
@@ -341,6 +346,19 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
             <div className="row">
               <button type="button" className="go" onClick={() => answerDropAsk(true)}>네</button>
               <button type="button" onClick={() => answerDropAsk(false)}>아니요</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hud.towerAsk && (
+        // 창 바깥(어두운 배경)을 누르면 [아니요]와 같다
+        <div className="help-back" onClick={(e) => { if (e.target === e.currentTarget) answerTowerAsk(false); }}>
+          <div className="wish" ref={wishAskRef} tabIndex={-1} role="alertdialog" aria-modal="true" aria-describedby="tower-ask">
+            <p id="tower-ask" className="ask">내 돌탑 위치로 이동할까요?</p>
+            <div className="row">
+              <button type="button" className="go" onClick={() => answerTowerAsk(true)}>네</button>
+              <button type="button" onClick={() => answerTowerAsk(false)}>아니요</button>
             </div>
           </div>
         </div>
