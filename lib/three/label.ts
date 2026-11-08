@@ -5,6 +5,7 @@ const BASE = H - 28; // 말풍선 아래 변. 그 밑은 꼬리
 const PX_PER_UNIT = 200; // 월드 1단위에 들어가는 캔버스 픽셀
 const TEXT_W = 600;
 const WISH_LINES = 2; // 접었을 때 보이는 소원 줄 수
+const HEART_COLOR = "#f5a3bd"; // 합장 수 하트: 파스텔 분홍
 const WISH_LINES_OPEN = 6; // 펼쳤을 때 캔버스에 들어가는 최대 줄 수
 
 // 띄어쓰기에서 줄을 나누고, 한 단어가 한 줄보다 길면 글자 단위로 나눈다
@@ -143,8 +144,22 @@ export class TowerLabel {
       lines.forEach((line, i) => ctx.fillText(line, W / 2, y + 92 + i * 48));
     }
     ctx.font = subFont;
-    ctx.fillStyle = urgent ? "#d4574a" : "#6f6478";
-    ctx.fillText(sub, W / 2, y + (wish ? 130 + (lines.length - 1) * 48 : 44), TEXT_W);
+    const subY = y + (wish ? 130 + (lines.length - 1) * 48 : 44), subColor = urgent ? "#d4574a" : "#6f6478";
+    const heart = sub.indexOf("♥");
+    if (heart < 0) {
+      ctx.fillStyle = subColor;
+      ctx.fillText(sub, W / 2, subY, TEXT_W);
+    } else {
+      // 합장 수 하트(♥)만 파스텔 분홍으로. 조각마다 너비를 재 이어 그린다
+      const parts = [[sub.slice(0, heart), subColor], ["♥", HEART_COLOR], [sub.slice(heart + 1), subColor]] as const;
+      let x = W / 2 - widthOf(sub, subFont) / 2;
+      ctx.textAlign = "left";
+      for (const [text, color] of parts) {
+        ctx.fillStyle = color;
+        ctx.fillText(text, x, subY);
+        x += ctx.measureText(text).width;
+      }
+    }
     this.tex.needsUpdate = true;
   }
 
