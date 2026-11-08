@@ -8,6 +8,7 @@ import { type Blob, REACTIONS, REACTION_SECONDS, type Reaction, animateBlob, mak
 import { TowerLabel, floatingText } from "./three/label";
 import { makePetals } from "./three/petals";
 import { makeSkyline } from "./three/skyline";
+import { makeRipple } from "./three/ripple";
 import { makeSplash } from "./three/splash";
 import { makePickGlow, makeStoneMesh } from "./three/stone";
 import { makeCritters } from "./three/critters";
@@ -26,7 +27,7 @@ export type WishPrompt = "ready" | "max";
 
 export type HudState = {
   online: boolean; people: number; towers: number;
-  myStones: number; myMinutes: number | null; myLife: string; wishPrompt: WishPrompt | null; firstStoneAsk: boolean;
+  myStones: number; myMinutes: number | null; myLife: string; wishPrompt: WishPrompt | null; firstStoneAsk: boolean; dropAsk: boolean;
   carrying: boolean; prompt: string; action: "first" | "stack" | "discard" | "blocked" | "pick" | "pray" | null; dropKind: "first" | "stack" | "discard" | "blocked" | null;
   canPray: boolean; prayWait: number; canWish: boolean; cam: string; toastId: number; toast: string;
 };
@@ -103,11 +104,15 @@ export class Game {
   inputLocked = false;
   private wishPrompt: WishPrompt | null = null;
   private firstStoneAsk = false;
+  private dropAsk: { x: number; z: number } | null = null; // 탑이 없을 때 탭한 자리에 첫돌을 놓을지 묻는 중
+  // 탭으로 걸어가는 곳. stone이면 닿았을 때 그 돌을 줍고, drop이면 그 자리를 바라보고 돌을 놓는다
+  private walkTo: { x: number; z: number; stone?: StoneView; drop?: boolean; reach?: number; best?: number; stuck: number } | null = null;
   private ray = new THREE.Raycaster();
   private pickTarget: StoneView | null = null;
   private glow = makePickGlow();
   private petals = makePetals();
   private splash = makeSplash();
+  private ripple = makeRipple();
   private skyline = makeSkyline();
   private world: ReturnType<typeof buildWorld>;
   private critters: ReturnType<typeof makeCritters>;
@@ -141,7 +146,7 @@ export class Game {
     // 그림자 상자 크기·깊이·치우침은 빛 높이에 따라 fitSunShadow가 맞춘다
     this.root.add(this.sun, this.sun.target);
     this.world = buildWorld(this.root);
-    this.root.add(this.petals.points, this.splash.group, this.skyline.mesh);
+    this.root.add(this.petals.points, this.splash.group, this.ripple.group, this.skyline.mesh);
     // 나비·물고기: 내 둘레에서만 사는 배경 생물. 휴대폰에서는 수를 줄인다
     this.critters = makeCritters(this.root, { flowers: this.world.flowers, meadows: this.world.meadows, perches: this.world.perches, splash: (x, z, yaw) => this.splash.emit(x, z, yaw), light: matchMedia(TOUCH_QUERY).matches });
     if (!matchMedia(TOUCH_QUERY).matches) {
@@ -417,7 +422,10 @@ export class Game {
   }
 
   // ───────── 입력 ─────────
-  setKey(code: string, down: boolean) { this.keys[code] = down; }
+  setKey(code: string, down: boolean) {
+    this.keys[code] = down;
+    if (down) this.walkTo = null; // 키를 누르면 탭으로 가던 길은 그만둔다
+  }
   releaseKeys() { this.keys = {}; this.joy = { x: 0, y: 0 }; }
   orbit(dx: number, dy: number) {
     this.orbitYaw -= dx * 0.006;
@@ -430,9 +438,9 @@ export class Game {
   }
   toast(msg: string) { this.toastMsg = msg; this.toastId++; }
 
-  // 화면 탭(x, y는 -1~1): 보이는 푯말 중 가장 앞의 것을 펼치거나 접는다
+  // 화면 탭(x, y는 -1~1): 보이는 푯말 중 가장 앞의 것을 펼치거나 접는다. 푯말을 맞혔으면 true
   tapLabel(x: number, y: number) {
-    if (this.inputLocked) return;
+    if (this.inputLocked) return false;
     this.ray.setFromCamera(new THREE.Vector2(x, y), this.camera);
     let best: TowerLabel | null = null, bestD = Infinity;
     for (const t of this.towers.values()) {
@@ -441,6 +449,103 @@ export class Game {
       if (hit?.uv && hit.distance < bestD && t.label.contains(hit.uv)) { best = t.label; bestD = hit.distance; }
     }
     best?.toggle();
+    return !!best;
+  }
+
+  // 화면 탭(클릭): 푯말 → 돌 → 땅 순서로 맞힌 것을 본다. 땅이면 그리로 걷고, 주울 수 있는 돌이면 가서 줍는다.
+  // 돌을 들고 있으면 내 탑 둘레를 탭했을 때 가서 쌓고, 탑이 없으면 그 자리에 첫돌을 놓을지 묻는다
+  tap(x: number, y: number) {
+    if (this.tapLabel(x, y)) return;
+    if (!this.canTapWalk) return;
+    this.ray.setFromCamera(new THREE.Vector2(x, y), this.camera);
+    const ground = this.groundHit();
+    // 언덕 너머에 가려진 돌은 맞힌 것으로 치지 않는다
+    let stone: StoneView | null = null, bestD = ground ? ground.t + 0.3 : Infinity;
+    for (const v of this.stones.values()) {
+      if (v.dying || v.row.state === "held") continue; // 머리 위에 든 돌은 땅을 탭한 것으로 본다
+      const hit = this.ray.intersectObject(v.mesh)[0];
+      if (hit && hit.distance < bestD) { bestD = hit.distance; stone = v; }
+    }
+    const held = this.myHeld;
+    if (!held && stone && this.pickable(stone)) {
+      this.walkTo = { x: stone.row.x, z: stone.row.z, stone, stuck: 0 };
+      this.rippleAt(stone.row.x, stone.row.z);
+      return;
+    }
+    if (!stone && this.beaconHit(ground?.t ?? Infinity)) { this.goToMyTower(); return; }
+    const pt = stone ? { x: stone.mesh.position.x, z: stone.mesh.position.z } : ground;
+    if (!pt) return;
+    const mine = this.myTower;
+    if (held && !mine) {
+      const why = this.cantDropAt(pt.x, pt.z);
+      if (why) { this.toast(why); return; }
+      this.rippleAt(pt.x, pt.z);
+      this.walkTo = null;
+      this.dropAsk = { x: pt.x, z: pt.z };
+      this.inputLocked = true;
+      this.releaseKeys();
+      return;
+    }
+    this.rippleAt(pt.x, pt.z);
+    if (held && mine && Math.hypot(mine.row.x - pt.x, mine.row.z - pt.z) <= STACK_RADIUS) {
+      this.walkTo = { x: mine.row.x, z: mine.row.z, drop: true, stuck: 0 };
+    } else this.walkTo = { x: pt.x, z: pt.z, stuck: 0 };
+  }
+  private get canTapWalk() {
+    const s = this.me.state;
+    return !this.inputLocked && !this.busy && s !== "pickup" && s !== "place" && s !== "pray";
+  }
+  // 내 탑으로 걸어간다(빛기둥이나 「내 탑」 표시를 눌렀을 때). 돌을 들고 있으면 가서 쌓고, 아니면 돌을 밟지 않게 1.2m 앞에서 선다
+  goToMyTower() {
+    const mine = this.myTower;
+    if (!mine || !this.canTapWalk) return;
+    const { x, z } = mine.row;
+    this.rippleAt(x, z);
+    this.walkTo = this.myHeld ? { x, z, drop: true, stuck: 0 } : { x, z, reach: 1.2, stuck: 0 };
+  }
+  // 광선이 기둥 축에서 보이는 굵기의 1.5배 안으로 지나가면 맞힌 것으로 본다(굵기는 멀수록 커지므로 먼 기둥도 누르기 쉽다).
+  // 땅에 먼저 닿는 광선(기둥 앞의 땅)과 밑동 1m는 땅을 탭한 것으로 둔다(탑 옆 땅을 눌러 그리로 걸어갈 수 있게)
+  private beaconHit(groundT: number) {
+    if (!this.beacon.visible) return false;
+    const { origin: o, direction: d } = this.ray.ray, b = this.beacon.position;
+    const hh = d.x * d.x + d.z * d.z;
+    if (hh < 1e-6) return false;
+    const t = ((b.x - o.x) * d.x + (b.z - o.z) * d.z) / hh; // 위에서 본 광선이 축에 가장 가까워지는 곳
+    if (t <= 0 || t >= groundT) return false;
+    const off = Math.hypot(o.x + d.x * t - b.x, o.z + d.z * t - b.z), y = o.y + d.y * t - b.y;
+    return off < this.beacon.children[0].scale.x * 1.5 && y > 1 && y < 40;
+  }
+  private rippleAt(x: number, z: number) { this.ripple.emit(x, groundAt(x, z), z); }
+  // 땅 메시를 따로 들고 있지 않아, 광선을 0.2m씩 따라가다 땅 밑으로 들어간 곳을 찾고 반으로 나눠 좁힌다
+  private groundHit() {
+    const { origin: o, direction: d } = this.ray.ray;
+    const above = (t: number) => o.y + d.y * t - groundAt(o.x + d.x * t, o.z + d.z * t);
+    for (let a = 0, t = 0.2; t <= 120; a = t, t += 0.2) {
+      if (above(t) > 0) continue;
+      let b = t;
+      for (let i = 0; i < 8; i++) { const m = (a + b) / 2; if (above(m) > 0) a = m; else b = m; }
+      return { x: o.x + d.x * b, z: o.z + d.z * b, t: b };
+    }
+    return null;
+  }
+  // refreshPickTarget와 같은 규칙: 바닥 돌, 또는 돌이 하나뿐인 내 탑의 첫 돌
+  private pickable(v: StoneView) {
+    if (v.dying) return false;
+    if (v.row.state === "ground") return true;
+    const mine = this.myTower;
+    return !!mine && v.row.state === "stacked" && v.row.tower_id === mine.row.id && this.towerStoneCount(mine.row.id) === 1;
+  }
+  private cantDropAt(x: number, z: number) {
+    if (isWater(x, z) || sunken(x, z) || hillBlocked(x, z) || onStairs(x, z) || Math.hypot(x, z) >= WORLD) return "여기에는 돌을 놓을 수 없어요";
+    for (const t of this.towers.values()) if (Math.hypot(t.row.x - x, t.row.z - z) < TOWER_GAP) return "다른 탑과 너무 가까워요";
+    return null;
+  }
+  // [네]: 그 자리로 걸어가 첫돌을 놓는다. [아니요]: 아무것도 하지 않는다
+  answerDropAsk(yes: boolean) {
+    const at = this.dropAsk;
+    this.dropAsk = null;
+    this.inputLocked = false;
+    if (yes && at && this.myHeld) this.walkTo = { ...at, drop: true, stuck: 0 };
   }
 
   react(kind: Reaction) {
@@ -452,21 +557,26 @@ export class Game {
     this.sendPoseNow();
   }
 
-  async action() {
+  action() {
+    this.walkTo = null; // 버튼·키로 직접 하면 탭으로 가던 길은 그만둔다
+    return this.act();
+  }
+  // target: 탭해서 고른 돌. 없으면 가까운 돌(pickTarget)을 줍는다. at: 탭해서 고른 놓을 자리. 없으면 0.7m 앞(dropPoint)
+  private async act(target?: StoneView, at?: { x: number; z: number }) {
     if (this.busy || this.me.state === "pickup" || this.me.state === "place") return;
     this.busy = true;
     try {
       const held = this.myHeld;
-      if (held) await this.drop(held);
-      else await this.pick();
+      if (held) await this.drop(held, at);
+      else await this.pick(target);
     } finally {
       this.busy = false;
     }
   }
 
-  private async pick() {
-    this.refreshPickTarget();
-    const s = this.pickTarget;
+  private async pick(target?: StoneView) {
+    if (!target) this.refreshPickTarget();
+    const s = target ?? this.pickTarget;
     if (s?.row.state === "stacked") {
       this.firstStoneAsk = true;
       this.inputLocked = true;
@@ -485,9 +595,9 @@ export class Game {
     }
   }
 
-  private async drop(held: StoneView) {
-    if (this.onStairs) { this.toast("계단에서는 돌을 놓을 수 없어요"); return; }
-    const { x, z } = this.dropPoint();
+  private async drop(held: StoneView, at?: { x: number; z: number }) {
+    const { x, z } = at ?? this.dropPoint(), p = this.me.g.position;
+    if (onStairs(p.x, p.z) || onStairs(x, z)) { this.toast("계단에서는 돌을 놓을 수 없어요"); return; }
     this.me.state = "place"; this.me.stateT = 0;
     const r = await this.net.dropStone(held.row.id, x, z);
     this.onDropResult(r);
@@ -513,6 +623,7 @@ export class Game {
   }
 
   async prayAction() {
+    this.walkTo = null;
     if (this.busy || this.me.state === "pray") return;
     const t = this.nearestTower(PRAY_RANGE);
     if (!t) { this.toast("탑 가까이에서 합장할 수 있어요"); return; }
@@ -542,7 +653,7 @@ export class Game {
     const t = this.myTower;
     return !!t && this.towerStoneCount(t.row.id) >= WISH_AT;
   }
-  get askOpen() { return !!this.wishPrompt || this.firstStoneAsk; }
+  get askOpen() { return !!this.wishPrompt || this.firstStoneAsk || !!this.dropAsk; }
   closeWishPrompt() {
     this.wishPrompt = null;
     this.inputLocked = false;
@@ -562,6 +673,7 @@ export class Game {
     const ok = await this.net.setWish(text);
     if (ok && mine) this.applyTower({ ...mine.row, wish: text, owner_id: null });
     this.toast(ok ? "소원을 빌었습니다" : "소원을 빌지 못했어요");
+    return ok;
   }
 
   // ───────── 프레임 ─────────
@@ -590,6 +702,7 @@ export class Game {
     }
     this.petals.update(dt, p, this.petalTint()); // 꽃잎도 지금 하늘빛에 물든다
     this.splash.update(dt);
+    this.ripple.update(dt);
     this.updateDaytime();
     fitSunShadow(this.sun, p, this.daytime.lightDir, this.camera); // 해가 낮으면 긴 그림자를 담도록 그림자 상자를 늘린다
     shadowLook(this.sun, this.daytime.lightDir, this.daytime.night); // 그림자 진하기: 낮 0.7, 해가 낮을 때·밤엔 더 옅게
@@ -630,7 +743,9 @@ export class Game {
     if (il > 1) { ix /= il; iz /= il; }
     let moving = false;
     const wantsMove = !this.inputLocked && il > 0.05;
-    if (wantsMove && isReaction(me.state)) me.state = "idle";
+    if (il > 0.05) this.walkTo = null; // 키·조이스틱으로 움직이면 탭으로 가던 길은 그만둔다
+    const tapWalk = !this.inputLocked && !!this.walkTo;
+    if ((wantsMove || tapWalk) && isReaction(me.state)) me.state = "idle";
     if (wantsMove && me.state === "idle") {
       const fwd = new THREE.Vector3();
       this.camera.getWorldDirection(fwd);
@@ -638,16 +753,9 @@ export class Game {
       fwd.normalize();
       const right = new THREE.Vector3().crossVectors(fwd, UP);
       const dir = right.multiplyScalar(ix).addScaledVector(fwd, -iz);
-      const want = (me.carrying ? 3 : 4) * dt * Math.min(1, il); // 조이스틱을 덜 기울이면 천천히 걷는다
-      const from = me.g.position.clone();
-      const moved = stepOnLand(me.g.position, dir, want);
-      // 벽을 따라 미끄러질 때는 실제로 가는 쪽을 바라본다
-      const face = moved > 0 ? me.g.position.clone().sub(from) : dir;
-      const dy = Math.atan2(face.x, face.z) - me.yaw;
-      me.yaw += Math.atan2(Math.sin(dy), Math.cos(dy)) * Math.min(1, dt * 12);
       // 벽에 정면으로 막혀 못 갔으면 걷지 않고 선다(제자리 걸음과 발소리를 내지 않는다)
-      moving = moved > 0;
-    }
+      moving = this.walk(dir, (me.carrying ? 3 : 4) * dt * Math.min(1, il), dt) > 0; // 조이스틱을 덜 기울이면 천천히 걷는다
+    } else if (tapWalk && me.state === "idle") moving = this.followTap(dt);
     me.baseY = standY(me.g.position.x, me.g.position.z);
     animateBlob(me, dt, moving);
     // 발이 땅에 닿는 순간(걷기 위상이 π의 배수를 지날 때) 발소리를 낸다. 웅덩이에서는 물이 살짝 튄다
@@ -666,6 +774,45 @@ export class Game {
     }
   }
   private movingNow = false;
+
+  // dir 쪽으로 want만큼 걷고 그쪽으로 돌아선다. 실제로 간 거리를 돌려준다
+  private walk(dir: THREE.Vector3, want: number, dt: number) {
+    const me = this.me, from = me.g.position.clone();
+    const moved = stepOnLand(me.g.position, dir, want);
+    // 벽을 따라 미끄러질 때는 실제로 가는 쪽을 바라본다
+    const face = moved > 0 ? me.g.position.clone().sub(from) : dir;
+    const dy = Math.atan2(face.x, face.z) - me.yaw;
+    me.yaw += Math.atan2(Math.sin(dy), Math.cos(dy)) * Math.min(1, dt * 12);
+    return moved;
+  }
+
+  // 탭한 곳으로 곧장 걷는다. 닿으면 고른 돌을 줍거나, 그 자리를 바라보고 그곳에 돌을 놓는다
+  private followTap(dt: number) {
+    const w = this.walkTo!, me = this.me, p = me.g.position, held = this.myHeld;
+    // 가는 사이 돌을 누가 집었거나, 들고 있던 돌이 없어졌으면 그만둔다
+    if (w.stone ? held || !this.pickable(w.stone) : w.drop && !held) { this.walkTo = null; return false; }
+    const tx = w.stone ? w.stone.row.x : w.x, tz = w.stone ? w.stone.row.z : w.z;
+    const dir = new THREE.Vector3(tx - p.x, 0, tz - p.z), d = dir.length();
+    const reach = w.reach ?? (w.stone ? 1.2 : w.drop ? 0.7 : 0.1); // 줍기는 PICK_RANGE보다 조금 안쪽까지 가야 확실히 닿는다
+    if (d <= reach) {
+      this.walkTo = null;
+      if ((w.drop || w.stone) && d > 0.05) me.yaw = Math.atan2(tx - p.x, tz - p.z); // 곧바로 돌아서 바라본다
+      if (!w.drop && !w.stone) return false;
+      if (this.busy) return false; // 다른 일(합장 등)을 하는 중이면 조용히 그만둔다
+      // 놓는 자리는 바라보는 방향과 상관없이 탭한 곳(탑이면 탑 가운데)이다. 너무 가까이 서 있어도 그 자리에 놓인다
+      void (w.stone ? this.act(w.stone) : this.act(undefined, { x: tx, z: tz }));
+      return false;
+    }
+    const moved = this.walk(dir.divideScalar(d), Math.min((me.carrying ? 3 : 4) * dt, d - reach + 0.02), dt);
+    // 벽을 따라 미끄러지기만 하고 0.5초 동안 0.05m도 가까워지지 못하면 그만둔다
+    const left = d - moved;
+    if (left < (w.best ?? Infinity) - 0.05) { w.best = left; w.stuck = 0; }
+    else if ((w.stuck += dt) > 0.5) {
+      this.walkTo = null;
+      if (w.drop || w.stone) this.toast("거기까지 갈 수 없어요");
+    }
+    return moved > 0;
+  }
 
   private splashAt(b: Blob) {
     const p = b.g.position;
@@ -958,7 +1105,7 @@ export class Game {
       myStones: mine ? this.towerStoneCount(mine.row.id) : 0,
       myMinutes: mine ? Math.ceil((Date.parse(mine.row.expires_at) - Date.now()) / 60000) : null,
       myLife: mine ? formatLife(Date.parse(mine.row.expires_at) - Date.now()) : "",
-      wishPrompt: this.wishPrompt, firstStoneAsk: this.firstStoneAsk,
+      wishPrompt: this.wishPrompt, firstStoneAsk: this.firstStoneAsk, dropAsk: !!this.dropAsk,
       carrying: !!this.myHeld, prompt, action, dropKind: kind,
       canPray: !!near, prayWait: near ? Math.ceil(this.prayWait(near.row.id) / 60000) : 0,
       canWish: this.canWishHere, cam: CAMS[this.camMode],
@@ -978,6 +1125,7 @@ export class Game {
   }
   debugTeleport(x: number, z: number) {
     this.pickTarget = null;
+    this.walkTo = null;
     this.me.g.position.set(x, 0, z);
   }
 
@@ -997,6 +1145,7 @@ export class Game {
     this.glow.dispose();
     this.petals.dispose();
     this.splash.dispose();
+    this.ripple.dispose();
     this.skyline.dispose();
     this.fireflies.dispose();
     this.net.stop();

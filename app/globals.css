@@ -74,13 +74,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
 .stats { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); margin: 0; z-index: 7; background: rgba(36, 30, 42, 0.72); color: #f4f1f7; border-radius: 10px; padding: 8px 12px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; white-space: pre; pointer-events: none; }
 
 /* 내 탑 위치 표시: 빛기둥과 함께 화면 위에 거리를 띄운다 */
-.marker { position: fixed; left: 0; top: 0; z-index: 4; align-items: center; gap: 6px; background: var(--accent); color: #4a2a24; border-radius: 999px; padding: 5px 12px; font-size: 13px; white-space: nowrap; pointer-events: none; box-shadow: 0 3px 12px rgba(242, 154, 138, 0.5); will-change: transform; }
+.marker { position: fixed; left: 0; top: 0; z-index: 4; align-items: center; gap: 6px; background: var(--accent); color: #4a2a24; border-radius: 999px; padding: 5px 12px; font-size: 13px; white-space: nowrap; pointer-events: auto; cursor: pointer; touch-action: manipulation; user-select: none; box-shadow: 0 3px 12px rgba(242, 154, 138, 0.5); will-change: transform; }
 .marker .arrow { font-size: 11px; line-height: 1; }
 
 /* 터치 */
 .touch { position: fixed; inset: 0; pointer-events: none; z-index: 4; display: none; }
-.stick { position: absolute; left: max(24px, env(safe-area-inset-left, 0px)); bottom: calc(28px + env(safe-area-inset-bottom, 0px)); width: 96px; height: 96px; border-radius: 50%; background: rgba(255, 255, 255, 0.35); pointer-events: auto; touch-action: none; }
-.knob { position: absolute; left: 28px; top: 28px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); box-shadow: 0 2px 8px rgba(74, 63, 82, 0.15); }
 .btn { position: absolute; right: max(24px, env(safe-area-inset-right, 0px)); bottom: calc(28px + env(safe-area-inset-bottom, 0px)); width: 46px; height: 46px; padding: 0; border-radius: 50%; border: 0; background: var(--accent); color: #4a2a24; font-size: 13px; pointer-events: auto; touch-action: manipulation; box-shadow: 0 3px 12px rgba(242, 154, 138, 0.45); }
 .btn.small { width: 34px; height: 34px; background: var(--chip); color: var(--ink); font-size: 11px; letter-spacing: -0.04em; white-space: nowrap; right: max(30px, env(safe-area-inset-right, 0px)); box-shadow: 0 2px 10px rgba(74, 63, 82, 0.12); }
 .btn.small:disabled { opacity: 0.45; }
@@ -94,8 +92,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
   .only-touch { display: grid !important; }
   .stat.action kbd { display: none; }
   .help-btn { display: none; }
-  /* 조이스틱(왼쪽 120px)과 줍기 버튼(오른쪽 70px) 사이의 가운데, 줍기 버튼과 같은 높이에 한 줄로 */
-  .hud.reactions { left: calc(50% + 25px); bottom: calc(35px + env(safe-area-inset-bottom, 0px)); gap: 5px; }
+  /* 줍기 버튼(오른쪽 70px)을 뺀 나머지 폭의 가운데, 줍기 버튼과 같은 높이에 한 줄로 */
+  .hud.reactions { left: calc(50% - 35px); bottom: calc(35px + env(safe-area-inset-bottom, 0px)); gap: 5px; }
   .chip.react { width: 32px; height: 32px; }
   .chip.react svg { width: 16px; height: 16px; }
   /* 알림 메시지는 오른쪽 버튼 기둥(아래에서 200px까지)보다 위에 띄워 화면 폭을 다 쓴다 */
