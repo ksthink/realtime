@@ -326,7 +326,9 @@ export class Game {
     if (t) this.floatAt(t);
   }
 
+  // 수명이 늘어나는 건 소원을 빈 탑뿐이다(소원 없는 탑은 마지막 돌을 쌓고 10분이면 사라진다)
   private floatAt(t: TowerView) {
+    if (!t.row.wish) return;
     const sprite = floatingText("+1시간", this.font);
     sprite.position.set(t.row.x, t.top + 0.4, t.row.z);
     this.root.add(sprite);
@@ -650,7 +652,7 @@ export class Game {
       if (r.expires_at) t.row = { ...t.row, expires_at: r.expires_at };
       this.floatAt(t);
       this.net.sendPray(t.row.id);
-      this.toast("합장했어요. 탑의 수명이 1시간 늘었어요");
+      this.toast(t.row.wish ? "합장했어요. 탑의 수명이 1시간 늘었어요" : "합장했어요. 소원을 빈 탑만 수명이 늘어나요");
     } else {
       this.me.state = "idle";
       if (r.reason === "cooldown" && r.prayed_at) this.prayers.set(t.row.id, Date.parse(r.prayed_at));

@@ -17,7 +17,7 @@ export type CharacterRow = {
 };
 export type Pose = { id: string; x: number; z: number; yaw: number; m: boolean; r?: Reaction };
 export type DropResult = { result: "first" | "stacked" | "collapsed" | "discarded" | "too_close" | "full" | "rejected"; count?: number };
-export type PrayResult = { ok: boolean; reason?: "gone" | "cooldown" | "auth"; expires_at?: string; prayed_at?: string };
+export type PrayResult = { ok: boolean; reason?: "gone" | "cooldown" | "auth"; expires_at?: string; prayed_at?: string; extended?: boolean };
 
 export type NetEvents = {
   snapshot(stones: StoneRow[], towers: TowerRow[], prayers: { tower_id: string; prayed_at: string }[]): void;

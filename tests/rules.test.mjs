@@ -130,10 +130,37 @@ test("10단이 차면 더 쌓이지 않고 바닥에 놓인다", async () => {
   clean(p);
 });
 
-test("합장: 기본 하루에 +1시간, 같은 탑은 10분에 한 번, 다른 사람은 따로 가능", async () => {
+test("소원 없는 탑은 마지막 돌을 쌓고 10분 뒤 사라지고, 쌓을 때마다 10분이 새로 시작되며, 합장으로 늘지 않는다", async () => {
+  const [a, b] = [await player("십분"), await player("지나가는")];
+  const { tower_id: t } = await carryAndDrop(a, stone(0.35), 44, 25);
+  const minutes = () => Math.round(Number(sql(`select extract(epoch from expires_at - now())/60 from towers where id='${t}'`)));
+  assert.equal(minutes(), 10);
+
+  sql(`update towers set expires_at = now() + interval '3 minutes' where id='${t}'`);
+  assert.equal((await carryAndDrop(a, stone(0.3), 44, 25)).result, "stacked");
+  assert.equal(minutes(), 10); // 쌓으면 다시 10분
+
+  const r = await rpc(b, "pray", { p_tower: t });
+  assert.equal(r.ok, true);
+  assert.equal(r.extended, false);
+  assert.equal(minutes(), 10); // 합장해도 그대로
+
+  sql(`update towers set expires_at = now() - interval '1 second' where id='${t}'`);
+  sql(`update world_state set last_tick = 'epoch'`);
+  await rpc(a, "world_tick");
+  assert.equal(sql(`select count(*) from towers where id='${t}'`), "0");
+  assert.equal(sql(`select count(*) from stones where tower_id='${t}'`), "0");
+  clean(a);
+});
+
+test("합장: 소원을 빌면 하루, 합장마다 +1시간, 같은 탑은 10분에 한 번, 다른 사람은 따로 가능", async () => {
   const [a, b] = [await player("탑주"), await player("행인")];
   const { tower_id: t } = await carryAndDrop(a, stone(0.35), 40, 5);
   const minutes = () => Math.round(Number(sql(`select extract(epoch from expires_at - now())/60 from towers where id='${t}'`)));
+  for (let k = 1; k <= 4; k++) {
+    sql(`insert into stones (seed, radius, height, state, tower_id, order_index, x, z) values (1, 0.3, 0.2, 'stacked', '${t}', ${k}, 40, 5)`);
+  }
+  assert.equal(await rpc(a, "set_wish", { p_wish: "합장 소원" }), true);
   assert.equal(minutes(), 1440);
 
   assert.equal((await rpc(b, "pray", { p_tower: t })).ok, true);
@@ -149,6 +176,7 @@ test("합장: 기본 하루에 +1시간, 같은 탑은 10분에 한 번, 다른 
   sql(`update prayers set prayed_at = now() - interval '10 minutes 1 second' where tower_id='${t}' and user_id='${b.uid}'`);
   assert.equal((await rpc(b, "pray", { p_tower: t })).ok, true); // 쿨다운 뒤 다시
   assert.equal(minutes(), 1620);
+  sql(`delete from towers where id='${t}'`); // 소원을 빌어 주인이 없으므로 clean으로는 지워지지 않는다
   clean(a);
 });
 
