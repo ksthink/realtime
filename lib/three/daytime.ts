@@ -56,7 +56,7 @@ function eclDir(lon: number, lat: number, ecl: number, out: THREE.Vector3) {
 // 해 높이(도)마다 하나. 아침(해가 동쪽)과 저녁(서쪽)을 따로 둬 새벽과 황혼의 빛깔이 다르다. 24° 위는 오늘의 낮 그대로
 type Key = { h: number; night: number; zen: string; hor: string; hs: string; hg: string; hi: number; lc: string; li: number; mtn: string; wc: string; wk: number; gc: string; gk: number; sc: string };
 // 해가 낮을수록 곧은 빛(lc·li)은 따뜻하고 세게, 하늘빛(hs·hi)은 푸르스름하고 약하게 둬서 빛 받는 쪽과 그늘 쪽의 빛깔이 갈린다
-const NIGHT: Omit<Key, "h"> = { night: 1, zen: "#1f2d55", hor: "#3a4b74", hs: "#9aa8dc", hg: "#76809e", hi: 0.92, lc: "#b8c6f4", li: 0.7, mtn: "#56648e", wc: "#3c4c7a", wk: 0.38, gc: "#8a94c4", gk: 0, sc: "#ffe6b8" };
+const NIGHT: Omit<Key, "h"> = { night: 1, zen: "#121b3e", hor: "#27355c", hs: "#9aa8dc", hg: "#76809e", hi: 0.92, lc: "#b8c6f4", li: 0.7, mtn: "#56648e", wc: "#3c4c7a", wk: 0.38, gc: "#8a94c4", gk: 0, sc: "#ffe6b8" };
 const DAY: Omit<Key, "h"> = { night: 0, zen: "#d9e3ef", hor: "#d9e3ef", hs: "#f3ecdf", hg: "#b9c9b4", hi: 1.72, lc: "#ffe9c9", li: 2.6, mtn: "#ffffff", wc: "#d9e3ef", wk: 0, gc: "#ffffff", gk: 0, sc: "#fff4d6" };
 // 한낮 빛(꽃잎처럼 스스로 빛을 받지 않는 것을 지금 빛에 맞춰 물들일 때 기준으로 쓴다)
 export const NOON_LIGHT = { sky: new THREE.Color(DAY.hs), skyI: DAY.hi, sun: new THREE.Color(DAY.lc), sunI: DAY.li };
