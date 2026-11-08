@@ -26,13 +26,13 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
 .hud { position: fixed; display: flex; flex-direction: column; gap: 6px; z-index: 5; pointer-events: none; max-width: calc(100vw - 32px); }
 .hud.tl { top: calc(12px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); align-items: flex-start; }
 .hud.tr { top: calc(12px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); align-items: flex-end; }
+.hud.tr.keys { flex-direction: row; } /* 뷰 · 빚기 버튼을 가로로 */
 .chip { background: var(--chip); backdrop-filter: blur(8px); border: 0; border-radius: 999px; padding: 6px 12px; font-size: 13px; line-height: 1.3; box-shadow: 0 2px 10px rgba(74, 63, 82, 0.08); }
 .chip.key { font-size: 12px; color: var(--muted); }
 .chip.key kbd { display: inline-block; background: #fff; border: 1px solid #e3dde8; border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; font-family: inherit; font-size: 11px; color: var(--ink); margin: 0 1px; }
 .chip.link { pointer-events: auto; }
 .chip.key.icon { display: flex; align-items: center; justify-content: center; gap: 5px; height: 36px; padding: 0 10px; color: var(--ink); }
 .dpad { display: inline-grid; grid-template: repeat(3, 22px) / repeat(3, 22px); gap: 2px; }
-.chip.key.dpad { display: grid; padding: 7px; border-radius: 16px; }
 .dpad kbd { display: flex; align-items: center; justify-content: center; margin: 0; padding: 0; background: #fff; border: 1px solid #e3dde8; border-bottom-width: 2px; border-radius: 5px; font-family: inherit; font-size: 11px; color: var(--ink); }
 .dpad .up { grid-area: 1 / 2; }
 .dpad .left { grid-area: 2 / 1; }
@@ -82,12 +82,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
 .btn.small { width: 48px; height: 48px; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); background: var(--chip); color: var(--ink); font-size: 13px; letter-spacing: -0.04em; white-space: nowrap; left: calc(max(20px, env(safe-area-inset-left, 0px)) + 76px); box-shadow: 0 2px 10px rgba(74, 63, 82, 0.12); }
 .btn.small:disabled { opacity: 0.45; }
 .btn.wishb { left: calc(max(20px, env(safe-area-inset-left, 0px)) + 134px); }
-.chip.cam-touch { display: none; }
 @media (hover: none), (pointer: coarse) {
   .touch { display: block; }
-  .hud.tr.keys .chip.key:not(.link) { display: none; }
-  .chip.cam-touch { display: flex; }
-  .hud.tr.keys { flex-direction: row; } /* 휴대폰에서는 뷰 · 빚기 버튼을 가로로 */
   .only-key { display: none !important; }
   .only-touch { display: grid !important; }
   .stat.action kbd { display: none; }

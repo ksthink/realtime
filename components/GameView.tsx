@@ -244,11 +244,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
         )}
       </div>
       <div className="hud tr keys">
-        <div className="chip key dpad" role="img" aria-label="W A S D 키로 이동"><kbd className="up">W</kbd><kbd className="left">A</kbd><kbd className="down">S</kbd><kbd className="right">D</kbd></div>
-        <div className="chip key icon" role="img" aria-label="스페이스 키로 돌 줍기, 놓기"><kbd>Space</kbd><PickIcon /></div>
-        <div className="chip key icon" role="img" aria-label="Q 키로 합장"><kbd>Q</kbd><PrayIcon /></div>
-        <div className="chip key icon" role="img" aria-label={`C 키로 뷰 전환, 지금은 ${hud.cam}`}><kbd>C</kbd><CameraIcon /></div>
-        <button type="button" className="chip key icon link cam-touch" onClick={() => game?.cycleCam()} aria-label={`뷰 바꾸기, 지금은 ${hud.cam}`} title="뷰 바꾸기"><CameraIcon /></button>
+        <button type="button" className="chip key icon link" onClick={() => game?.cycleCam()} aria-label={`뷰 바꾸기, 지금은 ${hud.cam}`} title="뷰 바꾸기 (C)"><CameraIcon /></button>
         <button type="button" className="chip key icon link" onClick={() => { if (game) onResculpt(game.spot); }} aria-label="캐릭터 다시 빚기" title="캐릭터 다시 빚기"><SculptIcon /></button>
       </div>
 
