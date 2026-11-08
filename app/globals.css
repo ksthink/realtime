@@ -60,8 +60,6 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
 .stat svg { flex: none; }
 .stat b { font-weight: 400; min-width: 1ch; }
 .stat.offline { opacity: 0.5; }
-.stat.mine svg:first-of-type { color: var(--accent-deep); }
-.stat.mine svg:not(:first-of-type) { margin-left: 5px; }
 .stat.action kbd { background: #fff; border: 1px solid #e3dde8; border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; font-family: inherit; font-size: 11px; color: var(--ink); }
 .stat.action.stack, .stat.action.first { background: var(--accent); color: #4a2a24; }
 .stat.action.discard, .stat.action.blocked { background: #fff1d6; color: #8a5a12; }

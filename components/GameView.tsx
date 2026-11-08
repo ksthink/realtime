@@ -8,7 +8,7 @@ import { Game, type HudState, type PlayerSpot, type WishPrompt } from "@/lib/gam
 import { type CharacterRow, Net } from "@/lib/net";
 import { MAX_STONES, WISH_AT, WISH_MAX } from "@/lib/rules";
 import { soundDebug, startSound } from "@/lib/sound";
-import { CameraIcon, ClockIcon, CloseIcon, DiscardIcon, DragIcon, FirstStoneIcon, JoyIcon, PersonIcon, PickIcon, PrayIcon, RestIcon, SadIcon, SculptIcon, StackIcon, TowerIcon, WaveIcon, WishIcon } from "./Icons";
+import { CameraIcon, CloseIcon, DiscardIcon, DragIcon, FirstStoneIcon, JoyIcon, PersonIcon, PickIcon, PrayIcon, RestIcon, SadIcon, SculptIcon, StackIcon, TowerIcon, WaveIcon, WishIcon } from "./Icons";
 
 const TOAST_MS = 5000;
 const TAP_SLOP = 8; // 이만큼(px) 움직이기 전에 손을 떼면 탭으로 본다
@@ -237,11 +237,6 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
           <div className="chip stat" role="img" aria-label={`마을 탑 ${hud.towers}개`}><TowerIcon /><b>{hud.towers}</b></div>
           <div className={`chip stat ${hud.online ? "" : "offline"}`} role="img" aria-label={`접속 ${hud.people}명${hud.online ? "" : ", 연결 중"}`}><PersonIcon /><b>{hud.people}</b></div>
         </div>
-        {hud.myMinutes !== null && (
-          <div className="chip stat mine" role="img" aria-label={`내 탑 ${hud.myStones}단, 남은 시간 ${hud.myLife}`}>
-            <TowerIcon /><b>{hud.myStones}</b><ClockIcon /><b>{hud.myLife}</b>
-          </div>
-        )}
         {ActionIcon && (
           <div className={`chip stat action ${hud.action}`} role="img" aria-label={hud.prompt}>
             <ActionIcon size={22} /><kbd>{ACTIONS[hud.action!].key}</kbd>
@@ -294,7 +289,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
               <div className="only-touch"><dt>탭</dt><dd>땅을 탭하면 그곳으로 걸어갑니다. 돌을 탭하면 줍습니다</dd></div>
               <div><dt><DragIcon /></dt><dd>화면을 드래그해 카메라 돌리기</dd></div>
               <div><dt><PickIcon /><kbd className="only-key">Space</kbd></dt><dd>줍기/놓기. 내 첫돌 근처에 놓아야 쌓입니다. 돌은 놓기 버튼이나 키로만 내려놓습니다</dd></div>
-              <div><dt><PrayIcon /><kbd className="only-key">Q</kbd></dt><dd>합장. 탑 옆에서 하면 수명이 1시간 늘어납니다</dd></div>
+              <div><dt><PrayIcon /><kbd className="only-key">Q</kbd></dt><dd>합장. 소원을 빈 탑 옆에서 하면 수명이 1시간 늘어납니다</dd></div>
               <div><dt><WishIcon /><kbd className="only-key">F</kbd></dt><dd>내 탑이 {WISH_AT}단이 되면 소원 적기</dd></div>
               <div><dt><CameraIcon /><kbd className="only-key">C</kbd></dt><dd>뷰 전환</dd></div>
               <div><dt><span aria-hidden="true">😌👋😆😢</span></dt><dd>쉬기, 인사, 기쁨, 슬픔. 움직이면 끝나고, 돌을 들고는 할 수 없습니다</dd></div>
