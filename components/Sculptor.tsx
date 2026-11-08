@@ -7,6 +7,14 @@ import { playSquish, stopSquish } from "@/lib/sound";
 import { clamp, rng } from "@/lib/terrain";
 import { colorize, createBodyGeometry, encodeBody, randomPalette, sculptTopology, smoothNormals } from "@/lib/three/blob";
 
+// 이름짓기: 말랑한 꾸밈말 + 동글한 이름 + 두 자리 숫자(예: 몽글감자42). 이름 칸(12자)에 넉넉히 들어간다
+const NAME_FRONT = ["말랑", "몽글", "뽀송", "보들", "동글", "꼬물", "토실", "쫀득", "포근", "콩닥", "살랑", "폭신", "뭉게", "반짝", "새콤", "꼬마"];
+const NAME_BACK = ["감자", "콩떡", "찹쌀", "도토리", "방울", "솜사탕", "꿀떡", "젤리", "만두", "호떡", "버섯", "구름", "새싹", "두부", "단추", "쿠키"];
+const pickOne = <T,>(a: readonly T[]) => a[Math.floor(Math.random() * a.length)];
+function randomName() {
+  return pickOne(NAME_FRONT) + pickOne(NAME_BACK) + (10 + Math.floor(Math.random() * 90));
+}
+
 export type SculptResult = { name: string; seed: number; top: string; bottom: string; body: string };
 
 // 드래그 속도(초당 거리). 느리면 소리를 내지 않고, 빠르면 최대 크기로 낸다
@@ -248,6 +256,7 @@ export function Sculptor({ busy, error, onDone, onCancel }: { busy: boolean; err
         <form className="sculpt-foot" onSubmit={(e) => { e.preventDefault(); finish(); }}>
           {error && <p className="error" role="alert">{error}</p>}
           <div className="tools">
+            <button type="button" onClick={() => { setName(randomName()); setNameTip(false); }}>이름짓기</button>
             <label className={nameTip ? "name-field ask" : "name-field"}>
               <span>이름</span>
               <input ref={nameRef} value={name} maxLength={12} onChange={(e) => { setName(e.target.value); setNameTip(false); }} placeholder="예: 감자" autoComplete="off" aria-invalid={nameTip} aria-describedby={nameTip ? "name-tip" : undefined} />
