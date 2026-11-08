@@ -58,6 +58,7 @@ const OPEN_SWITCH = 0.3; // 가까운 탑 둘 사이에서 펼친 푯말을 바�
 const FOV_MIN = 50, FOV_WIDE = 60, FOV_MAX = 76;
 const PORTRAIT_PULL = 1.3; // 세로 화면에서는 카메라를 이만큼 더 뒤로 빼 양옆이 더 보이게 한다 // 단계가 바뀔 때 사라졌다 나타나는 시간(초)
 const PICK_SWITCH_GAIN = 0.15; // 다른 돌이 이만큼(미터) 더 가까워야 대상을 바꾼다. 거리가 비슷한 돌 사이에서 깜빡이지 않게 한다
+const HOVER_STONE_EVERY = 0.08; // 마우스 아래 돌을 이만큼(초)마다 다시 찾는다
 const GLOW_FADE = 0.12; // 대상 표시가 사라지거나 나타나는 시간(초)
 const LANTERN_LIGHT = 2.2; // 내 랜턴 빛 세기(칸델라). 발밑 둘레 몇 m를 따뜻하게 비춘다
 const TOUCH_QUERY = "(hover: none), (pointer: coarse)"; // globals.css의 모바일 조건과 같다
@@ -365,7 +366,7 @@ export class Game {
 
   private updateGlow(dt: number) {
     const s = this.me.state;
-    const want = this.inputLocked || s === "pickup" || s === "place" ? null : this.pickTarget;
+    const want = this.inputLocked || s === "pickup" || s === "place" ? null : this.hoverStone && this.pickable(this.hoverStone) ? this.hoverStone : this.pickTarget;
     if (this.glowOn !== want) {
       this.glowK -= dt / GLOW_FADE;
       if (this.glowK <= 0) {
@@ -459,13 +460,7 @@ export class Game {
     if (!this.canTapWalk) return;
     this.ray.setFromCamera(new THREE.Vector2(x, y), this.camera);
     const ground = this.groundHit();
-    // 언덕 너머에 가려진 돌은 맞힌 것으로 치지 않는다
-    let stone: StoneView | null = null, bestD = ground ? ground.t + 0.3 : Infinity;
-    for (const v of this.stones.values()) {
-      if (v.dying || v.row.state === "held") continue; // 머리 위에 든 돌은 땅을 탭한 것으로 본다
-      const hit = this.ray.intersectObject(v.mesh)[0];
-      if (hit && hit.distance < bestD) { bestD = hit.distance; stone = v; }
-    }
+    const stone = this.stoneHit(ground);
     const held = this.myHeld;
     if (!held && stone && this.pickable(stone)) {
       this.walkTo = { x: stone.row.x, z: stone.row.z, stone, stuck: 0 };
@@ -490,6 +485,29 @@ export class Game {
     if (held && mine && Math.hypot(mine.row.x - pt.x, mine.row.z - pt.z) <= STACK_RADIUS) {
       this.walkTo = { x: mine.row.x, z: mine.row.z, drop: true, stuck: 0 };
     } else this.walkTo = { x: pt.x, z: pt.z, stuck: 0 };
+  }
+  // 광선에 맞은 가장 앞의 돌. 언덕 너머에 가려진 돌은 맞힌 것으로 치지 않는다
+  private stoneHit(ground: { t: number } | null) {
+    let stone: StoneView | null = null, bestD = ground ? ground.t + 0.3 : Infinity;
+    for (const v of this.stones.values()) {
+      if (v.dying || v.row.state === "held") continue; // 머리 위에 든 돌은 땅을 탭한 것으로 본다
+      const hit = this.ray.intersectObject(v.mesh)[0];
+      if (hit && hit.distance < bestD) { bestD = hit.distance; stone = v; }
+    }
+    return stone;
+  }
+  // PC 마우스가 올라간 주울 수 있는 돌. 줍기 대상과 같은 빛을 띄워 클릭하면 무엇을 주울지 미리 보여 준다.
+  // 땅 광선 계산이 무거워 HOVER_STONE_EVERY초마다만 다시 찾는다
+  private hoverStone: StoneView | null = null;
+  private hoverStoneT = 0;
+  private updateHoverStone(dt: number) {
+    if ((this.hoverStoneT -= dt) > 0) return;
+    this.hoverStoneT = HOVER_STONE_EVERY;
+    this.hoverStone = null;
+    if (!this.hover || this.myHeld || !this.canTapWalk) return;
+    this.ray.setFromCamera(new THREE.Vector2(this.hover.x, this.hover.y), this.camera);
+    const v = this.stoneHit(this.groundHit());
+    if (v && this.pickable(v)) this.hoverStone = v;
   }
   private get canTapWalk() {
     const s = this.me.state;
@@ -683,6 +701,7 @@ export class Game {
     this.updateRemotes(dt);
     this.updateStones(dt);
     this.refreshPickTarget();
+    this.updateHoverStone(dt);
     this.updateGlow(dt);
     this.updateTowers(dt);
     this.updateFloaters(dt);
