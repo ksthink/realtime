@@ -14,6 +14,7 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   openGraph: { title: TITLE, description: DESCRIPTION, type: "website", locale: "ko_KR", siteName: TITLE },
   twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION },
+  verification: { other: { "metamoa-site-verification": "pJ_yfWYtZ_3XTTEaZUHUAa" } },
 };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
 
