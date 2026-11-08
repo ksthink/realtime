@@ -9,6 +9,7 @@ import { TowerLabel, floatingText } from "./three/label";
 import { makePetals } from "./three/petals";
 import { makeSkyline } from "./three/skyline";
 import { makeRipple } from "./three/ripple";
+import { makePathfinder, type PathPoint } from "./path";
 import { makeSplash } from "./three/splash";
 import { makePickGlow, makeStoneMesh } from "./three/stone";
 import { makeCritters } from "./three/critters";
@@ -107,7 +108,8 @@ export class Game {
   private firstStoneAsk = false;
   private dropAsk: { x: number; z: number } | null = null; // 탑이 없을 때 탭한 자리에 첫돌을 놓을지 묻는 중
   // 탭으로 걸어가는 곳. stone이면 닿았을 때 그 돌을 줍고, drop이면 그 자리를 바라보고 돌을 놓는다
-  private walkTo: { x: number; z: number; stone?: StoneView; drop?: boolean; reach?: number; best?: number; stuck: number } | null = null;
+  private walkTo: { x: number; z: number; stone?: StoneView; drop?: boolean; reach?: number; best?: number; stuck: number; path?: PathPoint[] } | null = null;
+  private paths = makePathfinder((x, z) => !blocked(x, z) && !sunken(x, z));
   private ray = new THREE.Raycaster();
   private pickTarget: StoneView | null = null;
   private glow = makePickGlow();
@@ -702,6 +704,7 @@ export class Game {
     this.updateStones(dt);
     this.refreshPickTarget();
     this.updateHoverStone(dt);
+    this.paths.warm(1);
     this.updateGlow(dt);
     this.updateTowers(dt);
     this.updateFloaters(dt);
@@ -807,10 +810,20 @@ export class Game {
 
   // 탭한 곳으로 곧장 걷는다. 닿으면 고른 돌을 줍거나, 그 자리를 바라보고 그곳에 돌을 놓는다
   private followTap(dt: number) {
+    this.frameDt = dt;
     const w = this.walkTo!, me = this.me, p = me.g.position, held = this.myHeld;
     // 가는 사이 돌을 누가 집었거나, 들고 있던 돌이 없어졌으면 그만둔다
     if (w.stone ? held || !this.pickable(w.stone) : w.drop && !held) { this.walkTo = null; return false; }
     const tx = w.stone ? w.stone.row.x : w.x, tz = w.stone ? w.stone.row.z : w.z;
+    // 처음 한 번 강·비탈을 돌아가는 길을 찾고, 꺾이는 곳을 하나씩 지나간다. 마지막 점은 목표 자리다
+    w.path ??= this.paths.find(p.x, p.z, tx, tz).pts;
+    while (w.path.length > 1 && Math.hypot(w.path[0].x - p.x, w.path[0].z - p.z) < 0.3) { w.path.shift(); w.best = undefined; w.stuck = 0; }
+    if (w.path.length > 1) {
+      const wp = w.path[0], wd = new THREE.Vector3(wp.x - p.x, 0, wp.z - p.z), dd = wd.length();
+      const moved = this.walk(wd.divideScalar(dd), Math.min((me.carrying ? 3 : 4) * dt, dd), dt);
+      this.checkStuck(w, dd - moved);
+      return moved > 0;
+    }
     const dir = new THREE.Vector3(tx - p.x, 0, tz - p.z), d = dir.length();
     const reach = w.reach ?? (w.stone ? 1.2 : w.drop ? 0.7 : 0.1); // 줍기는 PICK_RANGE보다 조금 안쪽까지 가야 확실히 닿는다
     if (d <= reach) {
@@ -823,15 +836,18 @@ export class Game {
       return false;
     }
     const moved = this.walk(dir.divideScalar(d), Math.min((me.carrying ? 3 : 4) * dt, d - reach + 0.02), dt);
-    // 벽을 따라 미끄러지기만 하고 0.5초 동안 0.05m도 가까워지지 못하면 그만둔다
-    const left = d - moved;
+    this.checkStuck(w, d - moved);
+    return moved > 0;
+  }
+  // 벽을 따라 미끄러지기만 하고 0.5초 동안 0.05m도 가까워지지 못하면 그만둔다
+  private checkStuck(w: NonNullable<Game["walkTo"]>, left: number) {
     if (left < (w.best ?? Infinity) - 0.05) { w.best = left; w.stuck = 0; }
-    else if ((w.stuck += dt) > 0.5) {
+    else if ((w.stuck += this.frameDt) > 0.5) {
       this.walkTo = null;
       if (w.drop || w.stone) this.toast("거기까지 갈 수 없어요");
     }
-    return moved > 0;
   }
+  private frameDt = 0;
 
   private splashAt(b: Blob) {
     const p = b.g.position;
