@@ -105,7 +105,7 @@ function Scene({ onGame, db, me, font, start }: { onGame(g: Game | null): void; 
 
 const EMPTY: HudState = {
   online: false, people: 1, towers: 0, myStones: 0, myMinutes: null, myLife: "", wishPrompt: null, firstStoneAsk: false, towerAsk: false, carrying: false,
-  prompt: "", action: null, dropKind: null, canPray: false, prayWait: 0, canWish: false, cam: "따라가기", toastId: 0, toast: "",
+  prompt: "", action: null, dropKind: null, canPray: false, prayWait: 0, canWish: false, wishNear: false, cam: "따라가기", toastId: 0, toast: "",
 };
 
 export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClient; me: CharacterRow; font: string; start?: PlayerSpot; onResculpt(at: PlayerSpot): void }) {
@@ -248,6 +248,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
         <div className="chip key icon" role="img" aria-label="스페이스 키로 돌 줍기, 놓기"><kbd>Space</kbd><PickIcon /></div>
         <div className="chip key icon" role="img" aria-label="Q 키로 합장"><kbd>Q</kbd><PrayIcon /></div>
         <div className="chip key icon" role="img" aria-label={`C 키로 뷰 전환, 지금은 ${hud.cam}`}><kbd>C</kbd><CameraIcon /></div>
+        <button type="button" className="chip key icon link cam-touch" onClick={() => game?.cycleCam()} aria-label={`뷰 바꾸기, 지금은 ${hud.cam}`} title="뷰 바꾸기"><CameraIcon /></button>
         <button type="button" className="chip key icon link" onClick={() => { if (game) onResculpt(game.spot); }} aria-label="캐릭터 다시 빚기" title="캐릭터 다시 빚기"><SculptIcon /></button>
       </div>
 
@@ -357,8 +358,7 @@ export function GameView({ db, me, font, start, onResculpt }: { db: SupabaseClie
       <div className="touch">
         <button type="button" className="btn act" onClick={() => void game?.action()}>{hud.carrying ? "놓기" : "줍기"}</button>
         <button type="button" className="btn small pray" disabled={!hud.canPray} onClick={() => void game?.prayAction()}>합장</button>
-        <button type="button" className="btn small wishb" disabled={!hud.canWish} onClick={openWish}>소원</button>
-        <button type="button" className="btn small cam" onClick={() => game?.cycleCam()}>뷰</button>
+        {hud.wishNear && <button type="button" className="btn small wishb" onClick={openWish}>소원</button>}
       </div>
     </div>
   );

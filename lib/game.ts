@@ -30,7 +30,7 @@ export type HudState = {
   online: boolean; people: number; towers: number;
   myStones: number; myMinutes: number | null; myLife: string; wishPrompt: WishPrompt | null; firstStoneAsk: boolean; towerAsk: boolean;
   carrying: boolean; prompt: string; action: "first" | "stack" | "discard" | "blocked" | "pick" | "pray" | null; dropKind: "first" | "stack" | "discard" | "blocked" | null;
-  canPray: boolean; prayWait: number; canWish: boolean; cam: string; toastId: number; toast: string;
+  canPray: boolean; prayWait: number; canWish: boolean; wishNear: boolean; cam: string; toastId: number; toast: string;
 };
 
 type StoneView = {
@@ -1134,6 +1134,8 @@ export class Game {
       carrying: !!this.myHeld, prompt, action, dropKind: kind,
       canPray: !!near, prayWait: near ? Math.ceil(this.prayWait(near.row.id) / 60000) : 0,
       canWish: this.canWishHere, cam: CAMS[this.camMode],
+      // 휴대폰 소원 버튼은 5단 넘은 내 탑 근처(합장 거리)에서만 보인다
+      wishNear: this.canWishHere && !!mine && Math.hypot(mine.row.x - this.me.g.position.x, mine.row.z - this.me.g.position.z) <= PRAY_RANGE,
       toastId: this.toastId, toast: this.toastMsg,
     };
   }

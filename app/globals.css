@@ -77,25 +77,27 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outli
 
 /* 터치 */
 .touch { position: fixed; inset: 0; pointer-events: none; z-index: 4; display: none; }
-.btn { position: absolute; right: max(24px, env(safe-area-inset-right, 0px)); bottom: calc(28px + env(safe-area-inset-bottom, 0px)); width: 46px; height: 46px; padding: 0; border-radius: 50%; border: 0; background: var(--accent); color: #4a2a24; font-size: 13px; pointer-events: auto; touch-action: manipulation; box-shadow: 0 3px 12px rgba(242, 154, 138, 0.45); }
-.btn.small { width: 34px; height: 34px; background: var(--chip); color: var(--ink); font-size: 11px; letter-spacing: -0.04em; white-space: nowrap; right: max(30px, env(safe-area-inset-right, 0px)); box-shadow: 0 2px 10px rgba(74, 63, 82, 0.12); }
+/* 휴대폰 조작 버튼: 왼쪽 아래에 줍기(크게) · 합장 · 소원(내 탑 근처에서만)을 가로로. 가운데 리액션 줄보다 조금 위에 띄워 겹치지 않게 한다 */
+.btn { position: absolute; left: max(20px, env(safe-area-inset-left, 0px)); bottom: calc(64px + env(safe-area-inset-bottom, 0px)); width: 64px; height: 64px; padding: 0; border-radius: 50%; border: 0; background: var(--accent); color: #4a2a24; font-size: 15px; pointer-events: auto; touch-action: manipulation; box-shadow: 0 3px 12px rgba(242, 154, 138, 0.45); }
+.btn.small { width: 48px; height: 48px; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); background: var(--chip); color: var(--ink); font-size: 13px; letter-spacing: -0.04em; white-space: nowrap; left: calc(max(20px, env(safe-area-inset-left, 0px)) + 76px); box-shadow: 0 2px 10px rgba(74, 63, 82, 0.12); }
 .btn.small:disabled { opacity: 0.45; }
-.btn.pray { bottom: calc(82px + env(safe-area-inset-bottom, 0px)); }
-.btn.wishb { bottom: calc(124px + env(safe-area-inset-bottom, 0px)); }
-.btn.cam { bottom: calc(166px + env(safe-area-inset-bottom, 0px)); }
+.btn.wishb { left: calc(max(20px, env(safe-area-inset-left, 0px)) + 134px); }
+.chip.cam-touch { display: none; }
 @media (hover: none), (pointer: coarse) {
   .touch { display: block; }
   .hud.tr.keys .chip.key:not(.link) { display: none; }
+  .chip.cam-touch { display: flex; }
+  .hud.tr.keys { flex-direction: row; } /* 휴대폰에서는 뷰 · 빚기 버튼을 가로로 */
   .only-key { display: none !important; }
   .only-touch { display: grid !important; }
   .stat.action kbd { display: none; }
   .help-btn { display: none; }
-  /* 줍기 버튼(오른쪽 70px)을 뺀 나머지 폭의 가운데, 줍기 버튼과 같은 높이에 한 줄로 */
-  .hud.reactions { left: calc(50% - 35px); bottom: calc(35px + env(safe-area-inset-bottom, 0px)); gap: 5px; }
+  /* 리액션은 화면 아래 가운데에 한 줄로. 왼쪽 버튼들은 이보다 위에 있다 */
+  .hud.reactions { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); gap: 5px; }
   .chip.react { width: 32px; height: 32px; }
   .chip.react svg { width: 16px; height: 16px; }
-  /* 알림 메시지는 오른쪽 버튼 기둥(아래에서 200px까지)보다 위에 띄워 화면 폭을 다 쓴다 */
-  .toast { bottom: calc(212px + env(safe-area-inset-bottom, 0px)); font-size: 16px; padding: 9px 16px; border-radius: 14px; }
+  /* 알림 메시지는 왼쪽 아래 버튼들(아래에서 128px까지)보다 위에 띄워 화면 폭을 다 쓴다 */
+  .toast { bottom: calc(140px + env(safe-area-inset-bottom, 0px)); font-size: 16px; padding: 9px 16px; border-radius: 14px; }
   /* 아주 좁은 화면에서도 리액션 줄이 양옆 조작부에 닿지 않게 한다 */
   @media (max-width: 340px) {
     .hud.reactions { gap: 3px; }
